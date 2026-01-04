@@ -28,8 +28,8 @@ export default function ClientWrapper({ project }: { project: any }) {
             </div>
 
             <LeadForm
-                project={project}
-                pos_id={pos_id}
+                projectId={project.id}
+                config={project.lead_form_config || {}}
                 onComplete={() => setSubmitted(true)}
             />
         </div>
