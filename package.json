@@ -27,6 +27,8 @@
     "secure-upload": "echo 'Configuring Secure Upload...'"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
     "@supabase/supabase-js": "^2.89.0",
     "@tailwindcss/postcss": "^4.1.18",
     "exceljs": "^4.4.0",
@@ -38,6 +40,7 @@
     "react-dom": "^19.2.3",
     "recharts": "^3.6.0",
     "server-only": "^0.0.1",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "three": "^0.182.0"
   }
 }
