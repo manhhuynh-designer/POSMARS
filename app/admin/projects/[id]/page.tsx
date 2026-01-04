@@ -7,6 +7,7 @@ import Link from 'next/link'
 import LeadFormBuilder from '@/components/admin/LeadFormBuilder'
 import TemplateConfigBuilder from '@/components/admin/TemplateConfigBuilder'
 import LocationManager from '@/components/admin/LocationManager'
+import { getSubdomainUrl, getPathUrl } from '@/lib/utils/url'
 
 type Tab = 'basic' | 'lead_form' | 'template' | 'locations' | 'analytics'
 
@@ -159,20 +160,18 @@ export default function EditProjectPage() {
                                 {isAR ? 'AR' : 'Game'} • {templateName}
                             </span>
                             <div className="flex flex-col gap-1">
-                                <a href={`https://${project.client_slug}.posmars.vn`} target="_blank" className="flex items-center gap-1 hover:text-orange-500 font-medium">
+                                <a href={getSubdomainUrl(project.client_slug)} target="_blank" className="flex items-center gap-1 hover:text-orange-500 font-medium">
                                     🚀 {project.client_slug}.posmars.vn <ExternalLink size={12} />
                                 </a>
-                                {process.env.NODE_ENV === 'development' && (
-                                    <div className="flex gap-3 text-xs text-gray-400">
-                                        <a href={`http://${project.client_slug}.localhost:3000`} target="_blank" className="hover:text-gray-600 hover:underline">
-                                            Local Subdomain
-                                        </a>
-                                        <span>|</span>
-                                        <a href={`http://localhost:3000/client/${project.client_slug}`} target="_blank" className="hover:text-gray-600 hover:underline">
-                                            Local Path
-                                        </a>
-                                    </div>
-                                )}
+                                <div className="flex gap-3 text-xs text-gray-400">
+                                    <a href={getSubdomainUrl(project.client_slug)} target="_blank" className="hover:text-gray-600 hover:underline">
+                                        Subdomain
+                                    </a>
+                                    <span>|</span>
+                                    <a href={getPathUrl(project.client_slug)} target="_blank" className="hover:text-gray-600 hover:underline">
+                                        Path
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>

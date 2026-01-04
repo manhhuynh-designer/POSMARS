@@ -334,10 +334,17 @@ export function updateFilterTransform(
 
 /**
  * Setup video element styling after AR ready
+ * Includes iOS Safari-specific fixes for camera access
  */
 export function setupVideoStyles(container: HTMLElement): void {
     const video = document.querySelector('video')
     if (video && container) {
+        // iOS Safari requires these attributes for inline camera playback
+        video.setAttribute('playsinline', '')
+        video.setAttribute('webkit-playsinline', '')
+        video.setAttribute('autoplay', '')
+        video.setAttribute('muted', '')
+
         container.appendChild(video)
         video.style.position = 'absolute'
         video.style.top = '0'

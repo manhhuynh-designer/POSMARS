@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { Plus, Edit2, ExternalLink, Trash2, BarChart2, Users, Target, Trophy } from 'lucide-react'
+import { getSubdomainUrl, getPathUrl } from '@/lib/utils/url'
 
 export default function AdminDashboard() {
     const [projects, setProjects] = useState<any[]>([])
@@ -181,16 +182,14 @@ export default function AdminDashboard() {
                                         <td className="px-6 py-4">
                                             <div className="font-medium text-gray-900 mb-1">{p.name || p.client_slug}</div>
                                             <div className="flex flex-col gap-1 text-xs">
-                                                <a href={`https://${p.client_slug}.posmars.vn`} target="_blank" className="flex items-center gap-1 text-blue-600 hover:underline">
+                                                <a href={getSubdomainUrl(p.client_slug)} target="_blank" className="flex items-center gap-1 text-blue-600 hover:underline">
                                                     🚀 {p.client_slug}.posmars.vn
                                                 </a>
-                                                {process.env.NODE_ENV === 'development' && (
-                                                    <div className="flex gap-2 text-gray-400 font-mono text-[10px]">
-                                                        <a href={`http://${p.client_slug}.localhost:3000`} target="_blank" className="hover:text-gray-600">SUB</a>
-                                                        <span>•</span>
-                                                        <a href={`http://localhost:3000/client/${p.client_slug}`} target="_blank" className="hover:text-gray-600">PATH</a>
-                                                    </div>
-                                                )}
+                                                <div className="flex gap-2 text-gray-400 font-mono text-[10px]">
+                                                    <a href={getSubdomainUrl(p.client_slug)} target="_blank" className="hover:text-gray-600">SUB</a>
+                                                    <span>•</span>
+                                                    <a href={getPathUrl(p.client_slug)} target="_blank" className="hover:text-gray-600">PATH</a>
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
