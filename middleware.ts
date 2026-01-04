@@ -11,30 +11,31 @@ export default function middleware(req: NextRequest) {
     const url = req.nextUrl;
     const hostname = req.headers.get("host") || "";
 
-    // Allow access via IP address (e.g. Network testing on mobile)
-    // RegExp checks for X.X.X.X or X.X.X.X:PORT
-    const isIp = /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?$/.test(hostname);
-    if (isIp) {
+    // Skip rewrite for Admin, Login, and API routes (redundant with matcher but safe)
+    if (url.pathname.startsWith('/admin') || url.pathname.startsWith('/login')) {
         return NextResponse.next();
     }
 
     const isLocal = hostname.includes('localhost');
-    const rootDomain = isLocal ? 'localhost:3000' : 'posmars.vn';
+    // Get root domain from env or default
+    const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'posmars.vn';
 
-    if (hostname === rootDomain || hostname === `www.${rootDomain}`) {
-        // Main site -> Continue
+    // Check if accessing main domain OR a Vercel preview domain (to avoid treating preview string as subdomain)
+    // e.g. posmars-git-master.vercel.app should be treated as main site for Admin access
+    if (
+        hostname === 'localhost:3000' ||
+        hostname === ROOT_DOMAIN ||
+        hostname === `www.${ROOT_DOMAIN}` ||
+        hostname.endsWith('.vercel.app') // Treat all Vercel previews as "Root" for now (or handle differently if needed)
+    ) {
         return NextResponse.next();
     }
 
     // Extract subdomain
     // Ex: samsung.posmars.vn -> samsung
-    // Ex: demo.localhost:3000 -> demo
-    // Note: Handle port stripping if necessary for production, but Vercel usually handles hostname well.
-    const currentSubdomain = hostname.replace(`.${rootDomain}`, '');
+    const currentSubdomain = hostname.replace(`.${ROOT_DOMAIN}`, '');
 
     // Rewrite to /client/[slug]
-    // We rewrite the URL to the dynamic route handler for the client
-    // e.g. /client/samsung/
     url.pathname = `/client/${currentSubdomain}${url.pathname}`;
     return NextResponse.rewrite(url);
 }
