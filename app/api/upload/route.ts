@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminStorage } from '@/lib/firebase-admin';
+import { getAdminStorage } from '@/lib/firebase-admin';
 import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: NextRequest) {
@@ -26,6 +26,13 @@ export async function POST(req: NextRequest) {
 
         // 2. Parse Request
         const { filename, contentType } = await req.json();
+
+        // Lazy load admin storage
+        const adminStorage = getAdminStorage();
+        if (!adminStorage) {
+            return NextResponse.json({ error: 'Storage configuration error' }, { status: 500 });
+        }
+
         const bucket = adminStorage.bucket();
         const file = bucket.file(filename);
 
