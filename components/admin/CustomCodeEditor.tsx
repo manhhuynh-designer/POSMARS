@@ -104,7 +104,7 @@ export default function CustomCodeEditor({
                     </span>
                     <button
                         onClick={() => onModeChange(!useCustomCode)}
-                        className={`relative w-14 h-7 rounded-full transition-colors ${useCustomCode ? 'bg-blue-500' : 'bg-gray-300'
+                        className={`relative w-14 h-7 rounded-full transition-colors overflow-hidden ${useCustomCode ? 'bg-blue-500' : 'bg-gray-300'
                             }`}
                     >
                         <span
