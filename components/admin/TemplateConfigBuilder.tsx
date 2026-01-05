@@ -632,35 +632,35 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 {/* Occlusion Radius */}
                                 <div>
                                     <label className="block text-sm font-medium mb-2">
-                                        Kích thước Sphere: <span className="text-pink-500">{config.occlusion_radius ?? 0.15}</span>
+                                        Kích thước Sphere: <span className="text-pink-500">{(config.occlusion_radius ?? 0.15).toFixed(2)}</span>
                                     </label>
                                     <input
                                         type="range"
                                         min="0.05"
-                                        max="0.25"
+                                        max="0.40"
                                         step="0.01"
                                         value={config.occlusion_radius ?? 0.15}
                                         onChange={e => setConfig({ ...config, occlusion_radius: parseFloat(e.target.value) })}
                                         className="w-full accent-pink-500"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh kích thước đầu (lớn hơn = che nhiều hơn)</p>
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh kích thước đầu (lớn hơn = che nhiều hơn) [0.05 - 0.40]</p>
                                 </div>
 
                                 {/* Occlusion Offset Z */}
                                 <div>
                                     <label className="block text-sm font-medium mb-2">
-                                        Độ sâu Sphere: <span className="text-pink-500">{config.occlusion_offset_z ?? -0.08}</span>
+                                        Độ sâu Sphere: <span className="text-pink-500">{(config.occlusion_offset_z ?? -0.08).toFixed(2)}</span>
                                     </label>
                                     <input
                                         type="range"
-                                        min="-0.15"
-                                        max="-0.02"
+                                        min="-0.20"
+                                        max="0.00"
                                         step="0.01"
                                         value={config.occlusion_offset_z ?? -0.08}
                                         onChange={e => setConfig({ ...config, occlusion_offset_z: parseFloat(e.target.value) })}
                                         className="w-full accent-pink-500"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh vị trí phía sau đầu (càng âm = càng ra sau)</p>
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh vị trí phía sau đầu (càng âm = càng ra sau) [-0.20 đến 0.00]</p>
                                 </div>
                             </div>
                         )}
