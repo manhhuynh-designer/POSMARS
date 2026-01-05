@@ -114,6 +114,17 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
         return (
             <div className="space-y-6">
+                {/* Upload Loading Banner */}
+                {uploading && (
+                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg flex items-center gap-3 animate-pulse">
+                        <div className="animate-spin w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full" />
+                        <div>
+                            <p className="text-sm font-medium text-blue-800">Đang upload file...</p>
+                            <p className="text-xs text-blue-600">Vui lòng chờ cho đến khi upload hoàn tất</p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Branding */}
                 <div className="bg-gray-50 p-4 rounded-lg space-y-4">
                     <h3 className="font-medium text-gray-700">Hình ảnh thương hiệu (Branding)</h3>
