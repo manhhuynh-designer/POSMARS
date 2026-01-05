@@ -108,7 +108,7 @@ export default function CustomCodeEditor({
                             }`}
                     >
                         <span
-                            className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustomCode ? 'translate-x-8' : 'translate-x-1'
+                            className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustomCode ? 'translate-x-7' : 'translate-x-1'
                                 }`}
                         />
                     </button>
