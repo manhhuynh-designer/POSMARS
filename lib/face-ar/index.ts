@@ -154,26 +154,32 @@ export function registerFaceARComponents(debugMode: boolean = false) {
                 debug: { type: 'boolean', default: false }
             },
             init: function () {
+                console.log('🔧 fix-occluder init, debug =', this.data.debug)
+
                 const configureOccluder = () => {
                     const object3D = this.el.getObject3D('mesh')
+                    console.log('🔍 fix-occluder: Looking for mesh, found:', !!object3D)
                     if (!object3D) return
 
                     const THREE = AFRAME.THREE
+                    let meshCount = 0
                     object3D.traverse((o: any) => {
                         if (o.isMesh) {
+                            meshCount++
                             let material
                             if (this.data.debug) {
                                 // DEBUG: Visible green wireframe
-                                console.log('🟢 Face mesh: DEBUG mode (green wireframe)')
+                                console.log('🟢 Face mesh: Applying DEBUG mode (green wireframe)')
                                 material = new THREE.MeshBasicMaterial({
                                     color: 0x00ff00,
                                     wireframe: true,
                                     transparent: true,
-                                    opacity: 0.5
+                                    opacity: 0.5,
+                                    side: THREE.DoubleSide
                                 })
                             } else {
                                 // PRODUCTION: Invisible occluder
-                                console.log('⚫ Face mesh: PRODUCTION mode (invisible depth-only)')
+                                console.log('⚫ Face mesh: Applying PRODUCTION mode (invisible depth-only)')
                                 material = new THREE.MeshBasicMaterial({
                                     colorWrite: false,
                                     depthWrite: true
@@ -181,15 +187,19 @@ export function registerFaceARComponents(debugMode: boolean = false) {
                             }
                             o.material = material
                             o.material.needsUpdate = true
+                            o.visible = true  // Ensure mesh is visible
                         }
                     })
+                    console.log(`✅ fix-occluder: Configured ${meshCount} meshes`)
                 }
 
                 // Try to configure immediately
                 configureOccluder()
 
-                // Also try after a delay (in case mesh isn't ready yet)
+                // Also try after delays
                 setTimeout(configureOccluder, 100)
+                setTimeout(configureOccluder, 500)
+                setTimeout(configureOccluder, 1000)
             }
         })
         console.log('✅ fix-occluder component registered')
