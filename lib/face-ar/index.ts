@@ -230,8 +230,8 @@ export function createFaceARScene(
         const headOccluderAnchor = document.createElement('a-entity')
         headOccluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
         const headSphere = document.createElement('a-sphere')
-        headSphere.setAttribute('radius', '0.09')
-        headSphere.setAttribute('position', '0 0 -0.05')
+        headSphere.setAttribute('radius', '0.15')  // Increased from 0.09 to cover full head
+        headSphere.setAttribute('position', '0 0.02 -0.08')  // Adjusted to center on head
         if (debugMode) {
             headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
         } else {
