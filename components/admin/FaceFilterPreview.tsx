@@ -143,10 +143,12 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         })
 
         faceAnchor.addEventListener('targetFound', () => {
+            console.log('👤 Face FOUND')
             setFaceDetected(true)
         })
 
         faceAnchor.addEventListener('targetLost', () => {
+            console.log('❌ Face LOST')
             setFaceDetected(false)
         })
 
