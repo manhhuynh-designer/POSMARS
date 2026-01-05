@@ -150,6 +150,9 @@ export function registerFaceARComponents(debugMode: boolean = false) {
     // Register fix-occluder component
     if (!AFRAME.components['fix-occluder']) {
         AFRAME.registerComponent('fix-occluder', {
+            schema: {
+                debug: { type: 'boolean', default: false }
+            },
             init: function () {
                 const configureOccluder = () => {
                     const object3D = this.el.getObject3D('mesh')
@@ -159,8 +162,9 @@ export function registerFaceARComponents(debugMode: boolean = false) {
                     object3D.traverse((o: any) => {
                         if (o.isMesh) {
                             let material
-                            if (debugMode) {
+                            if (this.data.debug) {
                                 // DEBUG: Visible green wireframe
+                                console.log('🟢 Face mesh: DEBUG mode (green wireframe)')
                                 material = new THREE.MeshBasicMaterial({
                                     color: 0x00ff00,
                                     wireframe: true,
@@ -169,21 +173,26 @@ export function registerFaceARComponents(debugMode: boolean = false) {
                                 })
                             } else {
                                 // PRODUCTION: Invisible occluder
+                                console.log('⚫ Face mesh: PRODUCTION mode (invisible depth-only)')
                                 material = new THREE.MeshBasicMaterial({
                                     colorWrite: false,
                                     depthWrite: true
                                 })
                             }
                             o.material = material
+                            o.material.needsUpdate = true
                         }
                     })
-                    this.el.object3D.renderOrder = 0
                 }
 
-                this.el.addEventListener('model-loaded', configureOccluder)
-                if (this.el.getObject3D('mesh')) configureOccluder()
+                // Try to configure immediately
+                configureOccluder()
+
+                // Also try after a delay (in case mesh isn't ready yet)
+                setTimeout(configureOccluder, 100)
             }
         })
+        console.log('✅ fix-occluder component registered')
     }
 }
 
