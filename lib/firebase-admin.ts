@@ -2,9 +2,30 @@ import "server-only";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 
-// ADVANCED: Robust private key sanitization for Vercel/Node.js environment
+// ADVANCED: Robust private key parsing that handles both PEM and JSON Service Account formats
 const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || "";
-let sanitizedKey = rawKey
+let finalKey = rawKey;
+let finalProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+let finalClientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
+let isJson = false;
+
+try {
+    // Check if the key is actually a full Service Account JSON
+    if (rawKey.trim().startsWith('{')) {
+        const json = JSON.parse(rawKey);
+        if (json.private_key) {
+            finalKey = json.private_key;
+            if (json.project_id) finalProjectId = json.project_id;
+            if (json.client_email) finalClientEmail = json.client_email;
+            isJson = true;
+        }
+    }
+} catch (e) {
+    // If JSON parse fails, it's likely a standard PEM key
+}
+
+// Standard PEM sanitization for the final key
+const sanitizedKey = finalKey
     .replace(/^["']|["']$/g, "")    // Remove leading/trailing quotes
     .split("\\n").join("\n")        // Unescape newlines
     .trim();
@@ -12,18 +33,18 @@ let sanitizedKey = rawKey
 export function getFirebaseDiagnostic() {
     return {
         exists: !!process.env.FIREBASE_ADMIN_PRIVATE_KEY,
+        isJsonFormatDetected: isJson,
         length: sanitizedKey.length,
         hasHeader: sanitizedKey.startsWith('-----BEGIN PRIVATE KEY-----'),
         hasFooter: sanitizedKey.endsWith('-----END PRIVATE KEY-----'),
-        containsLiteralSlashN: sanitizedKey.includes('\\n'),
         first10: sanitizedKey.substring(0, 10),
         last10: sanitizedKey.substring(sanitizedKey.length - 10)
     };
 }
 
 const serviceAccount = {
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+    projectId: finalProjectId,
+    clientEmail: finalClientEmail,
     privateKey: sanitizedKey,
 };
 
