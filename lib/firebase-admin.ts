@@ -2,12 +2,26 @@ import "server-only";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 
-// Robust private key sanitization for various environments (Vercel, local, etc)
+// ADVANCED: Robust private key sanitization for Vercel/Node.js environment
 const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || "";
-const sanitizedKey = rawKey
+let sanitizedKey = rawKey
     .replace(/^["']|["']$/g, "")    // Remove leading/trailing quotes
-    .replace(/\\n/g, "\n")          // Unescape newlines
+    .split("\\n").join("\n")        // Unescape newlines (more reliable than replace)
     .trim();                        // Remove extra whitespace
+
+// SAFE DIAGNOSTICS: Log structure info without leaking the actual secret
+if (process.env.NODE_ENV === 'production' || true) {
+    const keyInfo = {
+        exists: !!rawKey,
+        length: sanitizedKey.length,
+        hasHeader: sanitizedKey.startsWith('-----BEGIN PRIVATE KEY-----'),
+        hasFooter: sanitizedKey.endsWith('-----END PRIVATE KEY-----'),
+        containsLiteralSlashN: sanitizedKey.includes('\\n'),
+        first10: sanitizedKey.substring(0, 10),
+        last10: sanitizedKey.substring(sanitizedKey.length - 10)
+    };
+    console.log('Firebase Admin Key Diagnostic (Safe):', keyInfo);
+}
 
 const serviceAccount = {
     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
