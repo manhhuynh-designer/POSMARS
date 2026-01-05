@@ -11,7 +11,7 @@ interface VideoRecorderReturn {
     isRecording: boolean
     recordingTime: number
     recordedVideoUrl: string | null
-    startRecording: (video: HTMLVideoElement, arCanvas: HTMLCanvasElement) => void
+    startRecording: (video: HTMLVideoElement, arCanvas: HTMLCanvasElement, mirror?: boolean) => void
     stopRecording: () => void
     clearRecording: () => void
     downloadRecording: (filename?: string) => void
