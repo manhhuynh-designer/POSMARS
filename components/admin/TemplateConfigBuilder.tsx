@@ -757,6 +757,30 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 </div>
                             </div>
                         </div>
+
+                        {/* Reset Position Button */}
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setConfig({
+                                    ...config,
+                                    filter_scale: 0.5,
+                                    offset_x: 0,
+                                    offset_y: 0,
+                                    offset_z: 0,
+                                    rotation_x: 0,
+                                    rotation_y: 0,
+                                    rotation_z: 0
+                                })}
+                                className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                    <path d="M3 3v5h5" />
+                                </svg>
+                                Reset vị trí mặc định
+                            </button>
+                        </div>
                     </div>
 
                     {/* Instructions & Rules */}

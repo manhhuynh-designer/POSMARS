@@ -384,14 +384,21 @@ export function createFaceARScene(
         faceAnchor.appendChild(filterModel)
         filterEntity = filterModel
     } else if (is2D) {
-        // 2D PNG Image
+        // 2D PNG Image - Use width/height instead of 3D scale for proper face mapping
         const filterImage = document.createElement('a-image')
         filterImage.setAttribute('src', config.filter_url!)
-        filterImage.setAttribute('scale', `${scale} ${scale} ${scale}`)
+
+        // For 2D, scale acts as a multiplier for the default face unit size (~0.3 units)
+        // Width/height give more accurate face mapping than 3D scale
+        const imageSize = scale * 0.6  // 0.6 approximates face width in MindAR units
+        filterImage.setAttribute('width', imageSize.toString())
+        filterImage.setAttribute('height', imageSize.toString())
+
         filterImage.setAttribute('position', `${offsetX} ${offsetY} ${offsetZ}`)
         filterImage.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
         filterImage.setAttribute('opacity', '1')
         filterImage.setAttribute('transparent', 'true')
+        filterImage.setAttribute('alpha-test', '0.5')  // Better transparency handling
 
         faceAnchor.appendChild(filterImage)
         filterEntity = filterImage
