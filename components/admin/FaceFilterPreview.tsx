@@ -99,6 +99,22 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         }
     }, [config.occlusion_radius, config.occlusion_offset_z, config.full_head_occlusion])
 
+    // Update sphere material when debug mode toggles (real-time)
+    useEffect(() => {
+        if (!config.full_head_occlusion) return
+
+        const sphere = document.querySelector('a-sphere[data-occlusion-sphere]') as HTMLElement
+        if (sphere) {
+            if (debugMode) {
+                console.log('🔴 Switching to DEBUG mode (red wireframe)')
+                sphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
+            } else {
+                console.log('⚫ Switching to PRODUCTION mode (invisible depth-only)')
+                sphere.setAttribute('material', 'colorWrite: false; depthWrite: true; opacity: 1')
+            }
+        }
+    }, [debugMode, config.full_head_occlusion])
+
     const initFaceAR = () => {
         if (!containerRef.current) return
         console.log('initFaceAR called', config)
