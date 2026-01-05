@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminStorage } from '@/lib/firebase-admin';
+import { getAdminStorage, getFirebaseDiagnostic } from '@/lib/firebase-admin';
 import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: NextRequest) {
@@ -49,7 +49,6 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ url, publicUrl });
         } catch (signedUrlError: any) {
             console.error('getSignedUrl Error Details:', signedUrlError);
-            const { getFirebaseDiagnostic } = require('@/lib/firebase-admin');
             return NextResponse.json({
                 error: 'Failed to generate signed URL',
                 details: signedUrlError.message,
