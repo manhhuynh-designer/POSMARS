@@ -464,6 +464,17 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
             <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-180px)] overflow-hidden">
                 {/* Left: Config Panel - Scrollable */}
                 <div className="flex-1 overflow-y-auto pr-2 space-y-6 pb-20">
+                    {/* Upload Loading Banner */}
+                    {uploading && (
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg flex items-center gap-3 animate-pulse sticky top-0 z-10">
+                            <div className="animate-spin w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full" />
+                            <div>
+                                <p className="text-sm font-medium text-blue-800">Đang upload file...</p>
+                                <p className="text-xs text-blue-600">Vui lòng chờ cho đến khi upload hoàn tất</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Logo Upload */}
                     <div className="bg-gray-50 p-4 rounded-lg space-y-4">
                         <h3 className="font-medium text-gray-700">Logo Client</h3>
