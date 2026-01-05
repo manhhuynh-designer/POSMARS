@@ -266,9 +266,14 @@ export function createFaceARScene(
     occluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
     const occluderMesh = document.createElement('a-entity')
     occluderMesh.setAttribute('mindar-face-occluder', '')
+
+    // Use fix-occluder component to show in debug mode
     if (debugMode) {
-        occluderMesh.setAttribute('material', 'color: green; wireframe: true; opacity: 0.4; transparent: true')
+        occluderMesh.setAttribute('fix-occluder', 'debug: true')
+    } else {
+        occluderMesh.setAttribute('fix-occluder', 'debug: false')
     }
+
     occluderAnchor.appendChild(occluderMesh)
     scene.appendChild(occluderAnchor)
 
