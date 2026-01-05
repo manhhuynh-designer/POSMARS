@@ -116,7 +116,7 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
         try {
             const scene = document.querySelector('a-scene') as any
-            const video = containerRef.current?.querySelector('video')
+            const video = containerRef.current?.querySelector('video') as HTMLVideoElement
 
             if (!scene || !scene.canvas || !video) {
                 throw new Error('Scene or Video not ready')
@@ -125,25 +125,29 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
             // Force a render
             scene.renderer?.render(scene.object3D, scene.camera)
 
-            const aframeCanvas = scene.canvas as HTMLCanvasElement
-            const width = aframeCanvas.width
-            const height = aframeCanvas.height
+            // Use video native resolution for best quality
+            const videoWidth = video.videoWidth || 1920
+            const videoHeight = video.videoHeight || 1080
 
-            // Create composite canvas
+            const aframeCanvas = scene.canvas as HTMLCanvasElement
+
+            // Create high-resolution composite canvas
             const captureCanvas = document.createElement('canvas')
-            captureCanvas.width = width
-            captureCanvas.height = height
+            captureCanvas.width = videoWidth
+            captureCanvas.height = videoHeight
             const ctx = captureCanvas.getContext('2d')
 
             if (!ctx) throw new Error('Could not create canvas context')
 
-            // 1. Draw Video
-            ctx.drawImage(video, 0, 0, width, height)
+            // 1. Draw Video at full resolution
+            ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
 
-            // 2. Draw 3D Scene
-            ctx.drawImage(aframeCanvas, 0, 0, width, height)
+            // 2. Draw 3D Scene overlay - scale to match video resolution
+            // AR canvas may have different size, need to stretch to match
+            ctx.drawImage(aframeCanvas, 0, 0, videoWidth, videoHeight)
 
-            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92)
+            // Export at high quality
+            const imageData = captureCanvas.toDataURL('image/jpeg', 0.95)
             onCapture(imageData)
         } catch (e) {
             console.error('Capture failed:', e)

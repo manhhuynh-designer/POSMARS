@@ -141,20 +141,24 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 return
             }
 
-            // Create composite canvas
+            // Use video native resolution for best quality
+            const videoWidth = video.videoWidth || 1920
+            const videoHeight = video.videoHeight || 1080
+
+            // Create high-resolution composite canvas
             const canvas = document.createElement('canvas')
-            canvas.width = arCanvas.width
-            canvas.height = arCanvas.height
+            canvas.width = videoWidth
+            canvas.height = videoHeight
             const ctx = canvas.getContext('2d')!
 
-            // Draw video frame (background)
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            // Draw video frame at full resolution (background)
+            ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
 
-            // Draw AR canvas overlay (3D model)
-            ctx.drawImage(arCanvas, 0, 0)
+            // Draw AR canvas overlay - scale to match video resolution
+            ctx.drawImage(arCanvas, 0, 0, videoWidth, videoHeight)
 
-            // Convert to base64
-            const imageData = canvas.toDataURL('image/jpeg', 0.92)
+            // Convert to base64 at high quality
+            const imageData = canvas.toDataURL('image/jpeg', 0.95)
             setCapturedImage(imageData)
             setCaptured(true)
         } catch (e) {
