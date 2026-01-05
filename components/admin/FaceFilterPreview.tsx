@@ -107,10 +107,12 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         if (sphere) {
             if (debugMode) {
                 console.log('🔴 Switching to DEBUG mode (red wireframe)')
-                sphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
+                sphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true; side: double')
+                sphere.setAttribute('visible', 'true')
             } else {
                 console.log('⚫ Switching to PRODUCTION mode (invisible depth-only)')
-                sphere.setAttribute('material', 'colorWrite: false; depthWrite: true; opacity: 1')
+                sphere.setAttribute('material', 'opacity: 0; transparent: true; depthWrite: true; side: double')
+                sphere.setAttribute('visible', 'true')  // Must be visible for depth write
             }
         }
     }, [debugMode, config.full_head_occlusion])

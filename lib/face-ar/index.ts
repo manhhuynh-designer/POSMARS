@@ -248,10 +248,12 @@ export function createFaceARScene(
 
         if (debugMode) {
             console.log(`🔴 Creating RED debug sphere (radius: ${radius}, z: ${offsetZ})`)
-            headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
+            headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true; side: double')
         } else {
             console.log(`⚫ Creating invisible occluder sphere (radius: ${radius}, z: ${offsetZ})`)
-            headSphere.setAttribute('material', 'colorWrite: false; depthWrite: true')
+            // Invisible but writes to depth buffer
+            headSphere.setAttribute('material', 'opacity: 0; transparent: true; depthWrite: true; side: double')
+            headSphere.setAttribute('visible', 'true')  // Must be visible for depth write to work
         }
         headOccluderAnchor.appendChild(headSphere)
         scene.appendChild(headOccluderAnchor)
