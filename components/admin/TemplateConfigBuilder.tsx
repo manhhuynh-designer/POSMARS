@@ -588,6 +588,22 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                             </select>
                         </div>
 
+                        {/* Full Head Occlusion */}
+                        <div>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={config.full_head_occlusion || false}
+                                    onChange={e => setConfig({ ...config, full_head_occlusion: e.target.checked })}
+                                    className="w-4 h-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                                />
+                                <div>
+                                    <span className="text-sm font-medium text-gray-700">Che phủ đầu đầy đủ (Full Head Occlusion)</span>
+                                    <p className="text-xs text-gray-500 mt-0.5">Dành cho mũ, nón, tai thỏ (che phần sau đầu)</p>
+                                </div>
+                            </label>
+                        </div>
+
                         {/* Filter Scale */}
                         <div>
                             <label className="block text-sm font-medium mb-2">Kích thước: <span className="text-pink-500">{config.filter_scale || 0.5}x</span></label>
@@ -794,6 +810,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             rotation_x: config.rotation_x,
                                             rotation_y: config.rotation_y,
                                             rotation_z: config.rotation_z,
+                                            full_head_occlusion: config.full_head_occlusion,
                                         }}
                                         debugMode={debugMode}
                                         onClose={() => setShowPreview(false)}
