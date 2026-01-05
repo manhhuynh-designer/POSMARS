@@ -69,12 +69,21 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         config.rotation_z
     ])
 
-    // Re-init when filter type/URL/debugMode changes
+    // Re-init when filter type/URL/debugMode/occlusion changes
     useEffect(() => {
         if (!loading && containerRef.current) {
             initFaceAR()
         }
-    }, [config.filter_type, config.filter_url, config.filter_3d_url, config.anchor_position, debugMode])
+    }, [
+        config.filter_type,
+        config.filter_url,
+        config.filter_3d_url,
+        config.anchor_position,
+        config.full_head_occlusion,
+        config.occlusion_radius,
+        config.occlusion_offset_z,
+        debugMode
+    ])
 
     const initFaceAR = () => {
         if (!containerRef.current) return

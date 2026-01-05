@@ -604,6 +604,45 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                             </label>
                         </div>
 
+                        {/* Occlusion Settings - Show only when Full Head Occlusion is enabled */}
+                        {config.full_head_occlusion && (
+                            <div className="ml-7 space-y-3 p-3 bg-pink-50 rounded-lg border border-pink-200">
+                                {/* Occlusion Radius */}
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">
+                                        Kích thước Sphere: <span className="text-pink-500">{config.occlusion_radius ?? 0.15}</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0.05"
+                                        max="0.25"
+                                        step="0.01"
+                                        value={config.occlusion_radius ?? 0.15}
+                                        onChange={e => setConfig({ ...config, occlusion_radius: parseFloat(e.target.value) })}
+                                        className="w-full accent-pink-500"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh kích thước đầu (lớn hơn = che nhiều hơn)</p>
+                                </div>
+
+                                {/* Occlusion Offset Z */}
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">
+                                        Độ sâu Sphere: <span className="text-pink-500">{config.occlusion_offset_z ?? -0.08}</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="-0.15"
+                                        max="-0.02"
+                                        step="0.01"
+                                        value={config.occlusion_offset_z ?? -0.08}
+                                        onChange={e => setConfig({ ...config, occlusion_offset_z: parseFloat(e.target.value) })}
+                                        className="w-full accent-pink-500"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh vị trí phía sau đầu (càng âm = càng ra sau)</p>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Filter Scale */}
                         <div>
                             <label className="block text-sm font-medium mb-2">Kích thước: <span className="text-pink-500">{config.filter_scale || 0.5}x</span></label>
@@ -811,6 +850,8 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             rotation_y: config.rotation_y,
                                             rotation_z: config.rotation_z,
                                             full_head_occlusion: config.full_head_occlusion,
+                                            occlusion_radius: config.occlusion_radius,
+                                            occlusion_offset_z: config.occlusion_offset_z,
                                         }}
                                         debugMode={debugMode}
                                         onClose={() => setShowPreview(false)}

@@ -21,6 +21,10 @@ export interface FaceARConfig {
     rotation_z?: number
     /** Enable volumetric head occlusion (for hats/helmets) */
     full_head_occlusion?: boolean
+    /** Radius of volumetric head occluder sphere (default: 0.15) */
+    occlusion_radius?: number
+    /** Z-position of volumetric head occluder (default: -0.08) */
+    occlusion_offset_z?: number
 }
 
 export interface FaceARSceneOptions {
@@ -226,20 +230,31 @@ export function createFaceARScene(
     scene.appendChild(occluderAnchor)
 
     // 2. Volumetric Head Occluder (For hats/helmets/ears) - Sphere based
+    console.log('🔍 Checking full_head_occlusion:', config.full_head_occlusion, 'debugMode:', debugMode)
     if (config.full_head_occlusion) {
         const headOccluderAnchor = document.createElement('a-entity')
         headOccluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
         const headSphere = document.createElement('a-sphere')
-        headSphere.setAttribute('radius', '0.15')  // Increased from 0.09 to cover full head
-        headSphere.setAttribute('position', '0 0.02 -0.08')  // Adjusted to center on head
+
+        // Use configurable values with defaults
+        const radius = config.occlusion_radius ?? 0.15
+        const offsetZ = config.occlusion_offset_z ?? -0.08
+
+        headSphere.setAttribute('radius', radius.toString())
+        headSphere.setAttribute('position', `0 0.02 ${offsetZ}`)
+
         if (debugMode) {
+            console.log(`🔴 Creating RED debug sphere (radius: ${radius}, z: ${offsetZ})`)
             headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
         } else {
+            console.log(`⚫ Creating invisible occluder sphere (radius: ${radius}, z: ${offsetZ})`)
             headSphere.setAttribute('material', 'colorWrite: false; depthWrite: true')
         }
         headOccluderAnchor.appendChild(headSphere)
         scene.appendChild(headOccluderAnchor)
         console.log('✅ Volumetric head occluder enabled')
+    } else {
+        console.log('❌ Full head occlusion is disabled')
     }
 
     // Face Debug Visualization (optional) - Simple sphere for reliable rendering
