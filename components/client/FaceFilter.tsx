@@ -71,25 +71,44 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
         // Event Listeners
         scene.addEventListener('arReady', () => {
+            console.log('✅ FaceFilter: AR Ready!')
             setLoading(false)
             setupVideoStyles(containerRef.current!)
+
+            // Fallback: Set face detected after a short delay
+            // Some mobile browsers may not fire targetFound reliably
+            setTimeout(() => {
+                console.log('⏰ FaceFilter: Auto-enabling capture after timeout')
+                setFaceDetected(true)
+            }, 3000)
         })
 
         scene.addEventListener('arError', (event: any) => {
-            console.error('MindAR Error:', event)
+            console.error('❌ FaceFilter AR Error:', event)
             setError('Lỗi khởi động AR (Camera/GPU)')
             setLoading(false)
         })
 
-        faceAnchor.addEventListener('targetFound', () => {
-            setFaceDetected(true)
-        })
-
-        faceAnchor.addEventListener('targetLost', () => {
-            setFaceDetected(false)
-        })
-
+        // Append scene to DOM first, then attach target listeners
         containerRef.current.appendChild(scene)
+
+        // Wait for scene to be fully initialized before attaching face target listeners
+        setTimeout(() => {
+            const faceTarget = document.querySelector('[mindar-face-target]')
+            if (faceTarget) {
+                console.log('🎯 FaceFilter: Attaching face target listeners')
+                faceTarget.addEventListener('targetFound', () => {
+                    console.log('🟢 FaceFilter: Face detected!')
+                    setFaceDetected(true)
+                })
+                faceTarget.addEventListener('targetLost', () => {
+                    console.log('🔴 FaceFilter: Face lost!')
+                    // Don't set to false - keep button visible once face was detected
+                })
+            } else {
+                console.warn('⚠️ FaceFilter: No face target element found')
+            }
+        }, 1000)
     }
 
     const capturePhoto = async () => {
@@ -173,29 +192,33 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
                 </div>
             )}
 
-            {/* Face Hint */}
+            {/* Face Hint - only show briefly until face detected */}
             {!loading && !faceDetected && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                    <div className="text-center text-white">
+                    <div className="text-center text-white bg-black/40 px-6 py-4 rounded-2xl">
                         <Sparkles size={48} className="mx-auto mb-4 animate-pulse text-pink-400" />
                         <p className="text-lg font-medium">{config.instructions || 'Hướng camera vào khuôn mặt'}</p>
-                        <p className="text-sm opacity-70">Để áp dụng filter</p>
+                        <p className="text-sm opacity-70">Đang tìm khuôn mặt...</p>
                     </div>
                 </div>
             )}
 
-            {/* Capture Button */}
-            {!loading && faceDetected && (
+            {/* Capture Button - Always show after loading */}
+            {!loading && (
                 <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
                     <button
                         onClick={capturePhoto}
                         disabled={capturing}
-                        className="flex items-center gap-2 px-6 py-3 rounded-full text-white font-semibold shadow-lg hover:scale-105 transition-transform active:scale-95 disabled:opacity-50"
+                        className={`flex items-center gap-2 px-6 py-3 rounded-full text-white font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50 ${faceDetected ? 'scale-100 opacity-100' : 'scale-95 opacity-70'
+                            }`}
                         style={{ backgroundColor: btnColor }}
                     >
                         <Camera size={24} />
-                        {btnText}
+                        {capturing ? 'Đang chụp...' : btnText}
                     </button>
+                    {!faceDetected && (
+                        <p className="text-center text-white/70 text-xs mt-2">Chờ phát hiện khuôn mặt...</p>
+                    )}
                 </div>
             )}
 
