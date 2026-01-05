@@ -6,6 +6,7 @@ import { ArrowLeft, Save, ExternalLink, Upload, BarChart2 } from 'lucide-react'
 import Link from 'next/link'
 import LeadFormBuilder from '@/components/admin/LeadFormBuilder'
 import TemplateConfigBuilder from '@/components/admin/TemplateConfigBuilder'
+import CustomCodeEditor from '@/components/admin/CustomCodeEditor'
 import LocationManager from '@/components/admin/LocationManager'
 import { getSubdomainUrl, getPathUrl } from '@/lib/utils/url'
 
@@ -40,7 +41,11 @@ export default function EditProjectPage() {
         marker_url: '',
         locations: [] as any[],
         start_date: '',
-        end_date: ''
+        end_date: '',
+        // Code Mode fields
+        custom_html: '',
+        custom_script: '',
+        use_custom_code: false
     })
 
     useEffect(() => {
@@ -71,7 +76,11 @@ export default function EditProjectPage() {
             marker_url: data.marker_url || '',
             locations: data.locations || [],
             start_date: data.start_date ? data.start_date.split('T')[0] : '',
-            end_date: data.end_date ? data.end_date.split('T')[0] : ''
+            end_date: data.end_date ? data.end_date.split('T')[0] : '',
+            // Code Mode fields
+            custom_html: data.custom_html || '',
+            custom_script: data.custom_script || '',
+            use_custom_code: data.use_custom_code || false
         })
         setLoading(false)
     }
@@ -90,7 +99,11 @@ export default function EditProjectPage() {
                 marker_url: formData.marker_url,
                 locations: formData.locations,
                 start_date: formData.start_date || null,
-                end_date: formData.end_date || null
+                end_date: formData.end_date || null,
+                // Code Mode fields
+                custom_html: formData.custom_html,
+                custom_script: formData.custom_script,
+                use_custom_code: formData.use_custom_code
             })
             .eq('id', projectId)
 
@@ -281,28 +294,47 @@ export default function EditProjectPage() {
                 {/* Assets tab removed - consolidated into TemplateConfigBuilder */}
 
                 {activeTab === 'template' && (
-                    <div className="space-y-4">
-                        <h3 className="font-medium mb-4">Template: {templateName}</h3>
-                        <TemplateConfigBuilder
-                            template={project.template}
-                            initialConfig={formData.template_config}
-                            onChange={config => setFormData({ ...formData, template_config: config })}
-                            onUpload={async (file, path) => await uploadFile(file, path)}
+                    <div className="space-y-6">
+                        <h3 className="font-medium">Template: {templateName}</h3>
+
+                        {/* Mode Toggle & Code Editor */}
+                        <CustomCodeEditor
+                            customHtml={formData.custom_html}
+                            customScript={formData.custom_script}
+                            useCustomCode={formData.use_custom_code}
+                            templateType={project.template}
+                            onHtmlChange={html => setFormData({ ...formData, custom_html: html })}
+                            onScriptChange={script => setFormData({ ...formData, custom_script: script })}
+                            onModeChange={useCustom => setFormData({ ...formData, use_custom_code: useCustom })}
+                            onUploadAsset={async (file, path) => await uploadFile(file, path)}
+                            projectSlug={project.client_slug}
                         />
-                        {/* Fallback JSON for debugging/other templates without builder */}
-                        {!['lucky_draw', 'ar_checkin'].includes(project.template) && (
-                            <div className="mt-8 border-t pt-4">
-                                <p className="text-xs text-gray-400 mb-2">Advanced Config (JSON)</p>
-                                <textarea
-                                    className="w-full border p-2 rounded font-mono text-sm"
-                                    rows={10}
-                                    value={JSON.stringify(formData.template_config, null, 2)}
-                                    onChange={e => {
-                                        try { setFormData({ ...formData, template_config: JSON.parse(e.target.value) }) }
-                                        catch { }
-                                    }}
+
+                        {/* Template Mode: Visual Config */}
+                        {!formData.use_custom_code && (
+                            <>
+                                <TemplateConfigBuilder
+                                    template={project.template}
+                                    initialConfig={formData.template_config}
+                                    onChange={config => setFormData({ ...formData, template_config: config })}
+                                    onUpload={async (file, path) => await uploadFile(file, path)}
                                 />
-                            </div>
+                                {/* Fallback JSON for debugging/other templates without builder */}
+                                {!['lucky_draw', 'ar_checkin', 'face_filter'].includes(project.template) && (
+                                    <div className="mt-8 border-t pt-4">
+                                        <p className="text-xs text-gray-400 mb-2">Advanced Config (JSON)</p>
+                                        <textarea
+                                            className="w-full border p-2 rounded font-mono text-sm"
+                                            rows={10}
+                                            value={JSON.stringify(formData.template_config, null, 2)}
+                                            onChange={e => {
+                                                try { setFormData({ ...formData, template_config: JSON.parse(e.target.value) }) }
+                                                catch { }
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 )}

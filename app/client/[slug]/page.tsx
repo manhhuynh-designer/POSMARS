@@ -9,6 +9,7 @@ import ARCheckin from '@/components/client/ARCheckin'
 import ImageTracking from '@/components/client/ImageTracking'
 import FaceFilter from '@/components/client/FaceFilter'
 import Placeholder from '@/components/client/Placeholder'
+import CustomARRenderer from '@/components/client/CustomARRenderer'
 
 type Step = 'lead_form' | 'interaction' | 'result'
 
@@ -86,7 +87,7 @@ export default function ClientPage() {
         )
     }
 
-    const { interaction_type, template, lead_form_config, template_config, asset_url, marker_url } = project
+    const { interaction_type, template, lead_form_config, template_config, asset_url, marker_url, use_custom_code, custom_html, custom_script } = project
 
     // P2/P3 templates show placeholder
     const placeholderTemplates = ['world_tracking', 'scratch_card', 'quiz', 'catcher']
@@ -105,44 +106,62 @@ export default function ClientPage() {
             {/* Step 2: Interaction */}
             {step === 'interaction' && (
                 <>
-                    {/* Placeholder for P2/P3 templates */}
-                    {placeholderTemplates.includes(template) && (
-                        <Placeholder template={template} expectedDate="Q2 2024" />
-                    )}
-
-                    {/* AR: Image Tracking */}
-                    {template === 'image_tracking' && marker_url && asset_url && (
-                        <ImageTracking
-                            markerUrl={marker_url}
-                            modelUrl={asset_url}
-                            config={template_config || {}}
-                            onComplete={() => handleInteractionComplete()}
+                    {/* Code Mode: Render Custom HTML/Script */}
+                    {use_custom_code && custom_html && (
+                        <CustomARRenderer
+                            html={custom_html}
+                            script={custom_script}
+                            variables={{
+                                marker_url,
+                                asset_url,
+                                ...template_config
+                            }}
                         />
                     )}
 
-                    {/* AR: Check-in */}
-                    {template === 'ar_checkin' && (
-                        <ARCheckin
-                            config={template_config || { frame_url: marker_url || '' }}
-                            onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}
-                        />
-                    )}
+                    {/* Template Mode: Standard Templates (only if not using custom code) */}
+                    {!use_custom_code && (
+                        <>
+                            {/* Placeholder for P2/P3 templates */}
+                            {placeholderTemplates.includes(template) && (
+                                <Placeholder template={template} expectedDate="Q2 2024" />
+                            )}
 
-                    {/* Game: Lucky Draw */}
-                    {template === 'lucky_draw' && (
-                        <LuckyDraw
-                            config={template_config || { prizes: [] }}
-                            onComplete={(prize) => handleInteractionComplete({ prize })}
-                        />
-                    )}
+                            {/* AR: Image Tracking */}
+                            {template === 'image_tracking' && marker_url && asset_url && (
+                                <ImageTracking
+                                    markerUrl={marker_url}
+                                    modelUrl={asset_url}
+                                    config={template_config || {}}
+                                    onComplete={() => handleInteractionComplete()}
+                                    onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}
+                                />
+                            )}
 
-                    {/* AR: Face Filter */}
-                    {template === 'face_filter' && (
-                        <FaceFilter
-                            config={template_config || {}}
-                            onCapture={(imageData) => handleInteractionComplete({ imageUrl: imageData })}
-                            onComplete={() => handleInteractionComplete()}
-                        />
+                            {/* AR: Check-in */}
+                            {template === 'ar_checkin' && (
+                                <ARCheckin
+                                    config={template_config || { frame_url: marker_url || '' }}
+                                    onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}
+                                />
+                            )}
+
+                            {/* Game: Lucky Draw */}
+                            {template === 'lucky_draw' && (
+                                <LuckyDraw
+                                    config={template_config || { prizes: [] }}
+                                    onComplete={(prize) => handleInteractionComplete({ prize })}
+                                />
+                            )}
+
+                            {template === 'face_filter' && (
+                                <FaceFilter
+                                    config={template_config || {}}
+                                    onCapture={(imageData) => handleInteractionComplete({ imageUrl: imageData })}
+                                    onComplete={() => handleInteractionComplete()}
+                                />
+                            )}
+                        </>
                     )}
                 </>
             )}

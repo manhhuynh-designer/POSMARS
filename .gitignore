@@ -50,3 +50,4 @@ desktop.ini
 *.pid
 *.seed
 *.pid.lock
+.env*.local

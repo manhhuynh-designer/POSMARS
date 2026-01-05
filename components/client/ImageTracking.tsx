@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, X } from 'lucide-react'
+import { Camera, X, RotateCcw, Check, Download } from 'lucide-react'
 
 interface ImageTrackingConfig {
     model_scale?: number
     model_position?: [number, number, number]
+    model_rotation?: [number, number, number]
     show_scan_hint?: boolean
+    enable_capture?: boolean
 }
 
 interface ImageTrackingProps {
@@ -13,19 +15,23 @@ interface ImageTrackingProps {
     modelUrl: string
     config: ImageTrackingConfig
     onComplete: () => void
+    onCapture?: (imageUrl: string) => void
 }
 
-export default function ImageTracking({ markerUrl, modelUrl, config, onComplete }: ImageTrackingProps) {
+export default function ImageTracking({ markerUrl, modelUrl, config, onComplete, onCapture }: ImageTrackingProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [scanning, setScanning] = useState(true)
+    const [captured, setCaptured] = useState(false)
+    const [capturedImage, setCapturedImage] = useState<string | null>(null)
+
+    // Enable capture if onCapture prop is provided or config.enable_capture is true
+    const enableCapture = Boolean(onCapture || config.enable_capture)
 
     useEffect(() => {
-        // Dynamically load MindAR scripts
         const loadScripts = async () => {
             try {
-                // Check if already loaded
                 if ((window as any).MINDAR) {
                     initAR()
                     return
@@ -74,7 +80,6 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
         loadScripts()
 
         return () => {
-            // Cleanup
             const scene = document.querySelector('a-scene')
             if (scene) scene.remove()
         }
@@ -85,8 +90,8 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
 
         const scale = config.model_scale || 1
         const pos = config.model_position || [0, 0, 0]
+        const rot = config.model_rotation || [0, 0, 0]
 
-        // Create A-Frame scene
         const scene = document.createElement('a-scene')
         scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no`)
         scene.setAttribute('color-space', 'sRGB')
@@ -94,28 +99,25 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
-        // Camera
         const camera = document.createElement('a-camera')
         camera.setAttribute('position', '0 0 0')
         camera.setAttribute('look-controls', 'enabled: false')
         scene.appendChild(camera)
 
-        // Entity for target
         const entity = document.createElement('a-entity')
         entity.setAttribute('mindar-image-target', 'targetIndex: 0')
 
-        // 3D Model
         const model = document.createElement('a-gltf-model')
         model.setAttribute('src', modelUrl)
         model.setAttribute('scale', `${scale} ${scale} ${scale}`)
         model.setAttribute('position', `${pos[0]} ${pos[1]} ${pos[2]}`)
+        model.setAttribute('rotation', `${rot[0]} ${rot[1]} ${rot[2]}`)
         model.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear')
         entity.appendChild(model)
 
         scene.appendChild(entity)
         containerRef.current.appendChild(scene)
 
-        // Listen for target found
         scene.addEventListener('arReady', () => {
             setLoading(false)
         })
@@ -127,6 +129,56 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
         entity.addEventListener('targetLost', () => {
             setScanning(true)
         })
+    }
+
+    const handleCapture = async () => {
+        try {
+            const video = document.querySelector('video') as HTMLVideoElement
+            const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+
+            if (!video || !arCanvas) {
+                console.error('Cannot find video or AR canvas')
+                return
+            }
+
+            // Create composite canvas
+            const canvas = document.createElement('canvas')
+            canvas.width = arCanvas.width
+            canvas.height = arCanvas.height
+            const ctx = canvas.getContext('2d')!
+
+            // Draw video frame (background)
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+            // Draw AR canvas overlay (3D model)
+            ctx.drawImage(arCanvas, 0, 0)
+
+            // Convert to base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.92)
+            setCapturedImage(imageData)
+            setCaptured(true)
+        } catch (e) {
+            console.error('Capture failed:', e)
+        }
+    }
+
+    const handleRetake = () => {
+        setCaptured(false)
+        setCapturedImage(null)
+    }
+
+    const handleConfirm = () => {
+        if (capturedImage && onCapture) {
+            onCapture(capturedImage)
+        }
+    }
+
+    const handleDownload = () => {
+        if (!capturedImage) return
+        const link = document.createElement('a')
+        link.download = `ar-photo-${Date.now()}.jpg`
+        link.href = capturedImage
+        link.click()
     }
 
     return (
@@ -156,7 +208,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
             )}
 
             {/* Scan Hint */}
-            {!loading && scanning && config.show_scan_hint !== false && (
+            {!loading && scanning && !captured && config.show_scan_hint !== false && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <div className="text-center text-white">
                         <Camera size={48} className="mx-auto mb-4 animate-pulse" />
@@ -166,13 +218,69 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete 
                 </div>
             )}
 
+            {/* Capture Button - Show when marker found and capture enabled */}
+            {!loading && !scanning && !captured && enableCapture && (
+                <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
+                    <button
+                        onClick={handleCapture}
+                        className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-orange-500 active:scale-95 transition-transform"
+                    >
+                        <Camera size={32} className="text-orange-500" />
+                    </button>
+                </div>
+            )}
+
+            {/* Captured Image Preview */}
+            {captured && capturedImage && (
+                <div className="absolute inset-0 bg-black z-30 flex flex-col">
+                    <div className="flex-1 flex items-center justify-center p-4">
+                        <img
+                            src={capturedImage}
+                            alt="Captured AR"
+                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                        />
+                    </div>
+
+                    {/* Preview Actions */}
+                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
+                        <div className="flex items-center justify-center gap-4">
+                            <button
+                                onClick={handleRetake}
+                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition"
+                            >
+                                <RotateCcw size={20} />
+                                Chụp lại
+                            </button>
+                            <button
+                                onClick={handleDownload}
+                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition"
+                            >
+                                <Download size={20} />
+                                Tải về
+                            </button>
+                            {onCapture && (
+                                <button
+                                    onClick={handleConfirm}
+                                    className="flex items-center gap-2 bg-orange-500 text-white px-8 py-3 rounded-full font-bold hover:bg-orange-600 transition"
+                                >
+                                    <Check size={20} />
+                                    Xác nhận
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Close Button */}
-            <button
-                onClick={onComplete}
-                className="absolute top-4 right-4 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center text-white z-20"
-            >
-                <X size={24} />
-            </button>
+            {!captured && (
+                <button
+                    onClick={onComplete}
+                    className="absolute top-4 right-4 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center text-white z-20"
+                >
+                    <X size={24} />
+                </button>
+            )}
         </div>
     )
 }
