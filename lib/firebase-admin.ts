@@ -2,10 +2,17 @@ import "server-only";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 
+// Robust private key sanitization for various environments (Vercel, local, etc)
+const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || "";
+const sanitizedKey = rawKey
+    .replace(/^["']|["']$/g, "")    // Remove leading/trailing quotes
+    .replace(/\\n/g, "\n")          // Unescape newlines
+    .trim();                        // Remove extra whitespace
+
 const serviceAccount = {
     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    privateKey: sanitizedKey,
 };
 
 let adminStorage: any;
