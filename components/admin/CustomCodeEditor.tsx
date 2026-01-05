@@ -102,16 +102,15 @@ export default function CustomCodeEditor({
                     <span className={`text-sm ${!useCustomCode ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
                         Template
                     </span>
-                    <button
-                        onClick={() => onModeChange(!useCustomCode)}
-                        className={`relative w-14 h-7 rounded-full transition-colors overflow-hidden ${useCustomCode ? 'bg-blue-500' : 'bg-gray-300'
-                            }`}
-                    >
-                        <span
-                            className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustomCode ? 'translate-x-7' : 'translate-x-1'
-                                }`}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={useCustomCode}
+                            onChange={() => onModeChange(!useCustomCode)}
+                            className="sr-only peer"
                         />
-                    </button>
+                        <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                    </label>
                     <span className={`text-sm ${useCustomCode ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
                         Code
                     </span>
