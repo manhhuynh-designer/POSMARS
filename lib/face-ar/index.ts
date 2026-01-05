@@ -110,39 +110,42 @@ export function registerFaceARComponents(debugMode: boolean = false) {
     const AFRAME = (window as any).AFRAME
 
     // Custom head occluder component for depth-only sphere rendering
-    AFRAME.registerComponent('head-occluder', {
-        schema: {
-            debug: { type: 'boolean', default: false }
-        },
-        init: function () {
-            this.updateMaterial()
-        },
-        update: function () {
-            this.updateMaterial()
-        },
-        updateMaterial: function () {
-            const mesh = this.el.getObject3D('mesh')
-            if (mesh) {
-                if (this.data.debug) {
-                    // Debug mode: red wireframe visible
-                    mesh.material.color.setHex(0xff0000)
-                    mesh.material.wireframe = true
-                    mesh.material.opacity = 0.3
-                    mesh.material.transparent = true
-                    mesh.material.colorWrite = true
-                    console.log('🔴 Head occluder: DEBUG mode')
-                } else {
-                    // Production mode: invisible but writes depth
-                    mesh.material.colorWrite = false
-                    mesh.material.depthWrite = true
-                    mesh.material.transparent = false
-                    mesh.renderOrder = 0
-                    console.log('⚫ Head occluder: PRODUCTION mode (invisible depth-only)')
+    if (!AFRAME.components['head-occluder']) {
+        AFRAME.registerComponent('head-occluder', {
+            schema: {
+                debug: { type: 'boolean', default: false }
+            },
+            init: function () {
+                this.updateMaterial()
+            },
+            update: function () {
+                this.updateMaterial()
+            },
+            updateMaterial: function () {
+                const mesh = this.el.getObject3D('mesh')
+                if (mesh) {
+                    if (this.data.debug) {
+                        // Debug mode: red wireframe visible
+                        mesh.material.color.setHex(0xff0000)
+                        mesh.material.wireframe = true
+                        mesh.material.opacity = 0.3
+                        mesh.material.transparent = true
+                        mesh.material.colorWrite = true
+                        console.log('🔴 Head occluder: DEBUG mode')
+                    } else {
+                        // Production mode: invisible but writes depth
+                        mesh.material.colorWrite = false
+                        mesh.material.depthWrite = true
+                        mesh.material.transparent = false
+                        mesh.renderOrder = 0
+                        console.log('⚫ Head occluder: PRODUCTION mode (invisible depth-only)')
+                    }
+                    mesh.material.needsUpdate = true
                 }
-                mesh.material.needsUpdate = true
             }
-        }
-    })
+        })
+        console.log('✅ head-occluder component registered')
+    }
 
     // Register fix-occluder component
     if (!AFRAME.components['fix-occluder']) {
