@@ -653,14 +653,14 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     </label>
                                     <input
                                         type="range"
-                                        min="-0.20"
-                                        max="0.00"
+                                        min="-1.0"
+                                        max="1.0"
                                         step="0.01"
                                         value={config.occlusion_offset_z ?? -0.08}
                                         onChange={e => setConfig({ ...config, occlusion_offset_z: parseFloat(e.target.value) })}
                                         className="w-full accent-pink-500"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh vị trí phía sau đầu (càng âm = càng ra sau) [-0.20 đến 0.00]</p>
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh vị trí trước/sau đầu (âm = ra sau, dương = ra trước) [-1.0 đến 1.0]</p>
                                 </div>
                             </div>
                         )}
