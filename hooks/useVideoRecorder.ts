@@ -55,7 +55,7 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
         return 'video/webm' // fallback
     }
 
-    const startRecording = useCallback((video: HTMLVideoElement, arCanvas: HTMLCanvasElement) => {
+    const startRecording = useCallback((video: HTMLVideoElement, arCanvas: HTMLCanvasElement, mirror: boolean = false) => {
         if (isRecording) return
 
         // Clear previous recording
@@ -77,11 +77,21 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
         const drawFrame = () => {
             if (!isRecordingRef.current) return
 
+            ctx.save()
+
+            if (mirror) {
+                // Flip horizontally
+                ctx.translate(compositeCanvas.width, 0)
+                ctx.scale(-1, 1)
+            }
+
             // Draw video background
             ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height)
 
             // Draw AR overlay
             ctx.drawImage(arCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height)
+
+            ctx.restore()
 
             animationFrameRef.current = requestAnimationFrame(drawFrame)
         }

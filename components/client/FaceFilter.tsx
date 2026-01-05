@@ -153,12 +153,19 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
             if (!ctx) throw new Error('Could not create canvas context')
 
+            // Mirroring for selfie mode (Face Filter)
+            ctx.save()
+            ctx.translate(videoWidth, 0)
+            ctx.scale(-1, 1)
+
             // 1. Draw Video at full resolution
             ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
 
             // 2. Draw 3D Scene overlay - scale to match video resolution
             // AR canvas may have different size, need to stretch to match
             ctx.drawImage(aframeCanvas, 0, 0, videoWidth, videoHeight)
+
+            ctx.restore()
 
             // Export at high quality
             const imageData = captureCanvas.toDataURL('image/jpeg', 0.95)
@@ -252,7 +259,8 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
                                 onClick={() => {
                                     const video = containerRef.current?.querySelector('video') as HTMLVideoElement
                                     const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
-                                    if (video && arCanvas) startRecording(video, arCanvas)
+                                    // Selfie mode mirror on (Face Filter)
+                                    if (video && arCanvas) startRecording(video, arCanvas, true)
                                 }}
                                 disabled={capturing}
                                 className="flex items-center gap-2 px-5 py-3 rounded-full bg-red-500 text-white font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50"
