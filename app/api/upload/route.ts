@@ -49,9 +49,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ url, publicUrl });
         } catch (signedUrlError: any) {
             console.error('getSignedUrl Error Details:', signedUrlError);
+            const { getFirebaseDiagnostic } = require('@/lib/firebase-admin');
             return NextResponse.json({
                 error: 'Failed to generate signed URL',
                 details: signedUrlError.message,
+                diagnostic: getFirebaseDiagnostic(),
                 stack: process.env.NODE_ENV === 'development' ? signedUrlError.stack : undefined
             }, { status: 500 });
         }

@@ -6,13 +6,12 @@ import { getStorage } from "firebase-admin/storage";
 const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || "";
 let sanitizedKey = rawKey
     .replace(/^["']|["']$/g, "")    // Remove leading/trailing quotes
-    .split("\\n").join("\n")        // Unescape newlines (more reliable than replace)
-    .trim();                        // Remove extra whitespace
+    .split("\\n").join("\n")        // Unescape newlines
+    .trim();
 
-// SAFE DIAGNOSTICS: Log structure info without leaking the actual secret
-if (process.env.NODE_ENV === 'production' || true) {
-    const keyInfo = {
-        exists: !!rawKey,
+export function getFirebaseDiagnostic() {
+    return {
+        exists: !!process.env.FIREBASE_ADMIN_PRIVATE_KEY,
         length: sanitizedKey.length,
         hasHeader: sanitizedKey.startsWith('-----BEGIN PRIVATE KEY-----'),
         hasFooter: sanitizedKey.endsWith('-----END PRIVATE KEY-----'),
@@ -20,7 +19,6 @@ if (process.env.NODE_ENV === 'production' || true) {
         first10: sanitizedKey.substring(0, 10),
         last10: sanitizedKey.substring(sanitizedKey.length - 10)
     };
-    console.log('Firebase Admin Key Diagnostic (Safe):', keyInfo);
 }
 
 const serviceAccount = {

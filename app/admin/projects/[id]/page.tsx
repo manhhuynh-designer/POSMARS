@@ -127,7 +127,9 @@ export default function EditProjectPage() {
 
         if (!res.ok) {
             const errData = await res.json()
-            throw new Error(errData.details || errData.error || 'Failed to get signed URL')
+            const msg = errData.details || errData.error || 'Failed to get signed URL'
+            const diag = errData.diagnostic ? `\nDiagnostic: ${JSON.stringify(errData.diagnostic)}` : ''
+            throw new Error(msg + diag)
         }
         const { url: signedUrl, publicUrl } = await res.json()
 
