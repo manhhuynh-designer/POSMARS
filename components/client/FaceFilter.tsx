@@ -17,6 +17,7 @@ interface FaceFilterProps {
         logo_url?: string
         capture_btn_text?: string
         capture_btn_color?: string
+        enable_capture?: boolean
     }
     onCapture: (imageData: string) => void
     onComplete: () => void
@@ -172,6 +173,15 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
     const btnColor = config.capture_btn_color || '#ec4899'
     const btnText = config.capture_btn_text || 'Chụp ảnh'
+
+    console.log('FaceFilter Render Info:', {
+        loading,
+        faceDetected,
+        capturing,
+        isRecording,
+        showVideoPreview,
+        enableCapture: Boolean(onCapture || config.enable_capture)
+    })
 
     return (
         <div className="fixed inset-0 bg-transparent">

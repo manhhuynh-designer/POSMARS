@@ -42,6 +42,15 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
     // Enable capture if onCapture prop is provided or config.enable_capture is true
     const enableCapture = Boolean(onCapture || config.enable_capture)
 
+    console.log('ImageTracking Render Info:', {
+        loading,
+        scanning,
+        captured,
+        showVideoPreview,
+        enableCapture,
+        isRecording
+    })
+
     useEffect(() => {
         const loadScripts = async () => {
             try {

@@ -26,6 +26,17 @@ export const DEFAULT_TEMPLATES = {
             background: rgba(0,0,0,0.7); color: white; padding: 12px 24px;
             border-radius: 24px; font-family: sans-serif; font-size: 14px;
         }
+        .record-btn {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: #ef4444; color: white; border: none;
+            padding: 12px 24px; border-radius: 24px;
+            font-size: 14px; font-weight: bold; cursor: pointer; z-index: 100;
+            display: none; align-items: center; justify-content: center; gap: 8px;
+            box-shadow: 0 4px 15px rgba(239,68,68,0.4);
+        }
+        .record-btn.recording { animation: pulse 1.5s infinite; background: #b91c1c; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -62,21 +73,89 @@ export const DEFAULT_TEMPLATES = {
     </a-scene>
     
     <div class="scan-hint">📱 Hướng camera vào poster để xem AR</div>
+    <button id="recordBtn" class="record-btn">🔴 Quay video</button>
     
     <script>
         const scene = document.querySelector('a-scene');
         const loading = document.getElementById('loading');
+        const recordBtn = document.getElementById('recordBtn');
+        const target = document.querySelector('[mindar-image-target]');
         
         scene.addEventListener('arReady', () => {
             loading.classList.add('hidden');
         });
         
-        scene.addEventListener('arError', () => {
-            loading.innerHTML = '<p style="color: #ff6b6b;">Không thể khởi động AR. Vui lòng thử lại.</p>';
+        target.addEventListener('targetFound', () => {
+            recordBtn.style.display = 'flex';
         });
+        
+        target.addEventListener('targetLost', () => {
+            if (!isRecording) recordBtn.style.display = 'none';
+        });
+
+        let mediaRecorder;
+        let chunks = [];
+        let isRecording = false;
+        let timerInterval;
+
+        recordBtn.addEventListener('click', () => {
+            if (!isRecording) startRecording();
+            else stopRecording();
+        });
+
+        async function startRecording() {
+            const video = document.querySelector('video');
+            const canvas = scene.canvas;
+            const composite = document.createElement('canvas');
+            composite.width = video.videoWidth;
+            composite.height = video.videoHeight;
+            const ctx = composite.getContext('2d');
+
+            function draw() {
+                if (!isRecording) return;
+                ctx.drawImage(video, 0, 0);
+                ctx.drawImage(canvas, 0, 0, composite.width, composite.height);
+                requestAnimationFrame(draw);
+            }
+
+            isRecording = true;
+            draw();
+
+            const stream = composite.captureStream(30);
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
+                ? 'video/webm;codecs=vp9' 
+                : 'video/mp4';
+            
+            mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
+            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'ar-video-' + Date.now() + (mimeType.includes('webm') ? '.webm' : '.mp4');
+                a.click();
+                chunks = [];
+            };
+
+            mediaRecorder.start();
+            recordBtn.classList.add('recording');
+            recordBtn.innerHTML = '⬛ Dừng';
+            
+            let startTime = Date.now();
+            timerInterval = setInterval(() => {
+                if (Math.floor((Date.now() - startTime) / 1000) >= 30) stopRecording();
+            }, 1000);
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            mediaRecorder.stop();
+            recordBtn.classList.remove('recording');
+            recordBtn.innerHTML = '🔴 Quay video';
+            clearInterval(timerInterval);
+        }
     </script>
-    
-    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 </body>
 </html>`,
         script: '',
@@ -108,20 +187,27 @@ export const DEFAULT_TEMPLATES = {
             color: white; font-family: sans-serif; z-index: 1000;
         }
         .loading-overlay.hidden { display: none; }
-        .capture-btn {
-            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+        .controls {
+            position: fixed; bottom: 80px; left: 0; right: 0;
+            display: flex; justify-content: center; gap: 20px; z-index: 100;
+        }
+        .btn {
             background: linear-gradient(135deg, #ec4899, #8b5cf6);
             color: white; border: none; padding: 16px 32px; border-radius: 50px;
-            font-size: 16px; font-weight: bold; cursor: pointer; z-index: 100;
+            font-size: 16px; font-weight: bold; cursor: pointer;
             box-shadow: 0 4px 15px rgba(236,72,153,0.4);
         }
-        .capture-btn:active { transform: translateX(-50%) scale(0.95); }
+        .btn:active { transform: scale(0.95); }
+        .btn-record { background: #ef4444; box-shadow: 0 4px 15px rgba(239,68,68,0.4); }
+        .btn-record.recording { animation: pulse 1.5s infinite; background: #b91c1c; }
         .hint {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             text-align: center; color: white; font-family: sans-serif;
             pointer-events: none; z-index: 50;
         }
         .hint.hidden { display: none; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -146,7 +232,6 @@ export const DEFAULT_TEMPLATES = {
         
         <a-camera active="false" position="0 0 0"></a-camera>
         
-        <!-- Face anchor point 168 = nose bridge (center of face) -->
         <a-entity mindar-face-target="anchorIndex: {{anchor_index}}">
             <a-gltf-model 
                 src="#filter" 
@@ -162,13 +247,18 @@ export const DEFAULT_TEMPLATES = {
         <p>Hướng camera vào khuôn mặt</p>
     </div>
     
-    <button id="captureBtn" class="capture-btn" style="display: none;">📸 Chụp ảnh</button>
+    <div id="controls" class="controls" style="display: none;">
+        <button id="captureBtn" class="btn">📸 Chụp</button>
+        <button id="recordBtn" class="btn btn-record">🔴 Quay</button>
+    </div>
     
     <script>
         const scene = document.querySelector('a-scene');
         const loading = document.getElementById('loading');
         const hint = document.getElementById('hint');
+        const controls = document.getElementById('controls');
         const captureBtn = document.getElementById('captureBtn');
+        const recordBtn = document.getElementById('recordBtn');
         const faceAnchor = document.querySelector('[mindar-face-target]');
         
         scene.addEventListener('arReady', () => {
@@ -177,38 +267,93 @@ export const DEFAULT_TEMPLATES = {
         
         faceAnchor.addEventListener('targetFound', () => {
             hint.classList.add('hidden');
-            captureBtn.style.display = 'block';
+            controls.style.display = 'flex';
         });
         
         faceAnchor.addEventListener('targetLost', () => {
             hint.classList.remove('hidden');
-            captureBtn.style.display = 'none';
+            if (!isRecording) controls.style.display = 'none';
         });
         
         captureBtn.addEventListener('click', async () => {
             const video = document.querySelector('video');
             const canvas = scene.canvas;
-            
-            // Composite capture
             const captureCanvas = document.createElement('canvas');
-            captureCanvas.width = canvas.width;
-            captureCanvas.height = canvas.height;
+            captureCanvas.width = video.videoWidth;
+            captureCanvas.height = video.videoHeight;
             const ctx = captureCanvas.getContext('2d');
-            
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.drawImage(canvas, 0, 0);
-            
-            const imageData = captureCanvas.toDataURL('image/jpeg', 0.92);
-            
-            // Download or send to parent
+            ctx.drawImage(video, 0, 0);
+            ctx.drawImage(canvas, 0, 0, captureCanvas.width, captureCanvas.height);
+            const imageData = captureCanvas.toDataURL('image/jpeg', 0.95);
             const link = document.createElement('a');
-            link.download = 'face-filter-' + Date.now() + '.jpg';
+            link.download = 'capture-' + Date.now() + '.jpg';
             link.href = imageData;
             link.click();
         });
+
+        let mediaRecorder;
+        let chunks = [];
+        let isRecording = false;
+        let timerInterval;
+
+        recordBtn.addEventListener('click', () => {
+            if (!isRecording) startRecording();
+            else stopRecording();
+        });
+
+        async function startRecording() {
+            const video = document.querySelector('video');
+            const canvas = scene.canvas;
+            const composite = document.createElement('canvas');
+            composite.width = video.videoWidth;
+            composite.height = video.videoHeight;
+            const ctx = composite.getContext('2d');
+
+            function draw() {
+                if (!isRecording) return;
+                ctx.drawImage(video, 0, 0);
+                ctx.drawImage(canvas, 0, 0, composite.width, composite.height);
+                requestAnimationFrame(draw);
+            }
+
+            isRecording = true;
+            draw();
+
+            const stream = composite.captureStream(30);
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
+                ? 'video/webm;codecs=vp9' 
+                : 'video/mp4';
+            
+            mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
+            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'video-' + Date.now() + (mimeType.includes('webm') ? '.webm' : '.mp4');
+                a.click();
+                chunks = [];
+            };
+
+            mediaRecorder.start();
+            recordBtn.classList.add('recording');
+            recordBtn.innerHTML = '⬛ Dừng';
+            
+            let startTime = Date.now();
+            timerInterval = setInterval(() => {
+                if (Math.floor((Date.now() - startTime) / 1000) >= 30) stopRecording();
+            }, 1000);
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            mediaRecorder.stop();
+            recordBtn.classList.remove('recording');
+            recordBtn.innerHTML = '🔴 Quay';
+            clearInterval(timerInterval);
+        }
     </script>
-    
-    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 </body>
 </html>`,
         script: '',
@@ -374,7 +519,7 @@ export const DEFAULT_TEMPLATES = {
             }
             ctx.drawImage(frameImg, fx, fy, fw, fh);
             
-            capturedImage = canvas.toDataURL('image/jpeg', 0.92);
+            capturedImage = canvas.toDataURL('image/jpeg', 0.95);
             previewImage.src = capturedImage;
             previewContainer.classList.add('active');
         });
