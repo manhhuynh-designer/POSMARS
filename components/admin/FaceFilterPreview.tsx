@@ -134,6 +134,12 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         scene.addEventListener('arReady', () => {
             setLoading(false)
             setupVideoStyles(containerRef.current!)
+
+            // Fallback: Auto-detect face after timeout (events may not fire reliably)
+            setTimeout(() => {
+                console.log('⏰ Preview: Auto-enabling face detection after 3s')
+                setFaceDetected(true)
+            }, 3000)
         })
 
         scene.addEventListener('arError', (event: any) => {
@@ -142,17 +148,27 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
             setLoading(false)
         })
 
-        faceAnchor.addEventListener('targetFound', () => {
-            console.log('👤 Face FOUND')
-            setFaceDetected(true)
-        })
-
-        faceAnchor.addEventListener('targetLost', () => {
-            console.log('❌ Face LOST')
-            setFaceDetected(false)
-        })
-
+        // Append scene to DOM FIRST
         containerRef.current.appendChild(scene)
+
+        // THEN attach face target listeners after scene is initialized
+        setTimeout(() => {
+            const faceTarget = document.querySelector('[mindar-face-target]')
+            if (faceTarget) {
+                console.log('🎯 Preview: Attaching face target listeners')
+                faceTarget.addEventListener('targetFound', () => {
+                    console.log('👤 Face FOUND')
+                    setFaceDetected(true)
+                })
+
+                faceTarget.addEventListener('targetLost', () => {
+                    console.log('❌ Face LOST')
+                    // Don't reset to false - keep detection visible
+                })
+            } else {
+                console.warn('⚠️ Preview: No face target element found')
+            }
+        }, 1000)
     }
 
     return (
