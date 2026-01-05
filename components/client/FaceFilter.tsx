@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, X, Sparkles } from 'lucide-react'
+import { Camera, X, Sparkles, Video, Square, Download, Play } from 'lucide-react'
 import {
     FaceARConfig,
     loadFaceARScripts,
@@ -8,6 +8,7 @@ import {
     createFaceARScene,
     setupVideoStyles,
 } from '@/lib/face-ar'
+import { useVideoRecorder } from '@/hooks/useVideoRecorder'
 
 interface FaceFilterProps {
     config: FaceARConfig & {
@@ -27,6 +28,18 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
     const [error, setError] = useState<string | null>(null)
     const [faceDetected, setFaceDetected] = useState(false)
     const [capturing, setCapturing] = useState(false)
+    const [showVideoPreview, setShowVideoPreview] = useState(false)
+
+    // Video recording hook
+    const {
+        isRecording,
+        recordingTime,
+        recordedVideoUrl,
+        startRecording,
+        stopRecording,
+        clearRecording,
+        downloadRecording
+    } = useVideoRecorder({ maxDuration: 30 })
 
     useEffect(() => {
         const init = async () => {
@@ -207,22 +220,94 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
                 </div>
             )}
 
-            {/* Capture Button - Always show after loading */}
-            {!loading && (
+            {/* Capture & Record Buttons - Always show after loading */}
+            {!loading && !showVideoPreview && (
                 <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
-                    <button
-                        onClick={capturePhoto}
-                        disabled={capturing}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-full text-white font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50 ${faceDetected ? 'scale-100 opacity-100' : 'scale-95 opacity-70'
-                            }`}
-                        style={{ backgroundColor: btnColor }}
-                    >
-                        <Camera size={24} />
-                        {capturing ? 'Đang chụp...' : btnText}
-                    </button>
+                    <div className="flex items-center gap-4">
+                        {/* Photo Capture Button */}
+                        <button
+                            onClick={capturePhoto}
+                            disabled={capturing || isRecording}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-full text-white font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50 ${faceDetected ? 'scale-100 opacity-100' : 'scale-95 opacity-70'
+                                }`}
+                            style={{ backgroundColor: btnColor }}
+                        >
+                            <Camera size={22} />
+                            {capturing ? '...' : 'Chụp'}
+                        </button>
+
+                        {/* Video Record Button */}
+                        {!isRecording ? (
+                            <button
+                                onClick={() => {
+                                    const video = containerRef.current?.querySelector('video') as HTMLVideoElement
+                                    const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+                                    if (video && arCanvas) startRecording(video, arCanvas)
+                                }}
+                                disabled={capturing}
+                                className="flex items-center gap-2 px-5 py-3 rounded-full bg-red-500 text-white font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Video size={22} />
+                                Quay
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    stopRecording()
+                                    setShowVideoPreview(true)
+                                }}
+                                className="flex items-center gap-2 px-5 py-3 rounded-full bg-red-600 text-white font-semibold shadow-lg animate-pulse"
+                            >
+                                <Square size={18} fill="white" />
+                                Dừng ({recordingTime}s)
+                            </button>
+                        )}
+                    </div>
                     {!faceDetected && (
                         <p className="text-center text-white/70 text-xs mt-2">Chờ phát hiện khuôn mặt...</p>
                     )}
+                    {isRecording && (
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-white text-sm">Đang quay... (tối đa 30s)</span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Video Preview Modal */}
+            {showVideoPreview && recordedVideoUrl && (
+                <div className="absolute inset-0 bg-black z-30 flex flex-col">
+                    <div className="flex-1 flex items-center justify-center p-4">
+                        <video
+                            src={recordedVideoUrl}
+                            controls
+                            autoPlay
+                            loop
+                            className="max-w-full max-h-full rounded-lg shadow-2xl"
+                        />
+                    </div>
+                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
+                        <div className="flex items-center justify-center gap-4">
+                            <button
+                                onClick={() => {
+                                    clearRecording()
+                                    setShowVideoPreview(false)
+                                }}
+                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium"
+                            >
+                                <X size={20} />
+                                Hủy
+                            </button>
+                            <button
+                                onClick={() => downloadRecording()}
+                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold"
+                            >
+                                <Download size={20} />
+                                Tải về
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, X, RotateCcw, Check, Download } from 'lucide-react'
+import { Camera, X, RotateCcw, Check, Download, Video, Square } from 'lucide-react'
+import { useVideoRecorder } from '@/hooks/useVideoRecorder'
 
 interface ImageTrackingConfig {
     model_scale?: number
@@ -25,6 +26,18 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
     const [scanning, setScanning] = useState(true)
     const [captured, setCaptured] = useState(false)
     const [capturedImage, setCapturedImage] = useState<string | null>(null)
+    const [showVideoPreview, setShowVideoPreview] = useState(false)
+
+    // Video recording hook
+    const {
+        isRecording,
+        recordingTime,
+        recordedVideoUrl,
+        startRecording,
+        stopRecording,
+        clearRecording,
+        downloadRecording
+    } = useVideoRecorder({ maxDuration: 30 })
 
     // Enable capture if onCapture prop is provided or config.enable_capture is true
     const enableCapture = Boolean(onCapture || config.enable_capture)
@@ -222,15 +235,85 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 </div>
             )}
 
-            {/* Capture Button - Show when marker found and capture enabled */}
-            {!loading && !scanning && !captured && enableCapture && (
-                <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
-                    <button
-                        onClick={handleCapture}
-                        className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-orange-500 active:scale-95 transition-transform"
-                    >
-                        <Camera size={32} className="text-orange-500" />
-                    </button>
+            {/* Capture & Record Buttons - Show when marker found and capture enabled */}
+            {!loading && !scanning && !captured && !showVideoPreview && enableCapture && (
+                <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center z-20">
+                    <div className="flex items-center gap-4">
+                        {/* Photo Capture Button */}
+                        <button
+                            onClick={handleCapture}
+                            disabled={isRecording}
+                            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-orange-500 active:scale-95 transition-transform disabled:opacity-50"
+                        >
+                            <Camera size={28} className="text-orange-500" />
+                        </button>
+
+                        {/* Video Record Button */}
+                        {!isRecording ? (
+                            <button
+                                onClick={() => {
+                                    const video = document.querySelector('video') as HTMLVideoElement
+                                    const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+                                    if (video && arCanvas) startRecording(video, arCanvas)
+                                }}
+                                className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-4 border-red-300 active:scale-95 transition-transform"
+                            >
+                                <Video size={28} className="text-white" />
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    stopRecording()
+                                    setShowVideoPreview(true)
+                                }}
+                                className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center shadow-lg border-4 border-red-300 animate-pulse"
+                            >
+                                <Square size={24} fill="white" className="text-white" />
+                            </button>
+                        )}
+                    </div>
+                    {isRecording && (
+                        <div className="flex items-center gap-2 mt-3 bg-black/60 px-4 py-2 rounded-full">
+                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-white text-sm font-medium">{recordingTime}s / 30s</span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Video Preview */}
+            {showVideoPreview && recordedVideoUrl && (
+                <div className="absolute inset-0 bg-black z-30 flex flex-col">
+                    <div className="flex-1 flex items-center justify-center p-4">
+                        <video
+                            src={recordedVideoUrl}
+                            controls
+                            autoPlay
+                            loop
+                            className="max-w-full max-h-full rounded-lg shadow-2xl"
+                        />
+                    </div>
+                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
+                        <div className="flex items-center justify-center gap-4">
+                            <button
+                                onClick={() => {
+                                    clearRecording()
+                                    setShowVideoPreview(false)
+                                }}
+                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium"
+                            >
+                                <RotateCcw size={20} />
+                                Quay lại
+                            </button>
+                            <button
+                                onClick={() => downloadRecording()}
+                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold"
+                            >
+                                <Download size={20} />
+                                Tải về
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
