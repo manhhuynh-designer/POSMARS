@@ -31,6 +31,8 @@ export interface ImageTrackingConfig {
     model_scale?: number
     model_position?: [number, number, number]
     model_rotation?: [number, number, number]
+    enable_capture?: boolean
+    show_scan_hint?: boolean
 }
 
 interface TemplateConfigBuilderProps {
@@ -810,6 +812,163 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                             💡 Preview giả lập tỷ lệ màn hình điện thoại (9:16).
                         </div>
                     </div>
+                </div>
+            </div>
+        )
+    }
+
+    // RENDER: Image Tracking
+    if (template === 'image_tracking') {
+        const modelPosition = config.model_position || [0, 0, 0]
+        const modelRotation = config.model_rotation || [0, 0, 0]
+
+        const updatePosition = (index: number, value: number) => {
+            const newPos = [...modelPosition]
+            newPos[index] = value
+            setConfig({ ...config, model_position: newPos })
+        }
+
+        const updateRotation = (index: number, value: number) => {
+            const newRot = [...modelRotation]
+            newRot[index] = value
+            setConfig({ ...config, model_rotation: newRot })
+        }
+
+        return (
+            <div className="space-y-6">
+                {/* Model Scale */}
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    <h3 className="font-medium text-gray-700">Kích thước 3D Model</h3>
+                    <div className="flex items-center gap-4">
+                        <input
+                            type="range"
+                            min="0.1"
+                            max="3"
+                            step="0.1"
+                            value={config.model_scale || 1}
+                            onChange={(e) => setConfig({ ...config, model_scale: parseFloat(e.target.value) })}
+                            className="flex-1"
+                        />
+                        <span className="text-sm font-medium text-gray-700 w-16 text-center">
+                            {(config.model_scale || 1).toFixed(1)}x
+                        </span>
+                    </div>
+                    <p className="text-xs text-gray-500">Điều chỉnh tỷ lệ hiển thị của 3D model</p>
+                </div>
+
+                {/* Model Position */}
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    <h3 className="font-medium text-gray-700">Vị trí Model (X, Y, Z)</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">X (trái-phải)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={modelPosition[0]}
+                                onChange={(e) => updatePosition(0, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Y (trên-dưới)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={modelPosition[1]}
+                                onChange={(e) => updatePosition(1, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Z (gần-xa)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={modelPosition[2]}
+                                onChange={(e) => updatePosition(2, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Model Rotation */}
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    <h3 className="font-medium text-gray-700">Góc xoay Model (độ)</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">X (pitch)</label>
+                            <input
+                                type="number"
+                                step="15"
+                                value={modelRotation[0]}
+                                onChange={(e) => updateRotation(0, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Y (yaw)</label>
+                            <input
+                                type="number"
+                                step="15"
+                                value={modelRotation[1]}
+                                onChange={(e) => updateRotation(1, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Z (roll)</label>
+                            <input
+                                type="number"
+                                step="15"
+                                value={modelRotation[2]}
+                                onChange={(e) => updateRotation(2, parseFloat(e.target.value) || 0)}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Options */}
+                <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+                    <h3 className="font-medium text-gray-700">Tùy chọn hiển thị</h3>
+
+                    {/* Enable Capture */}
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={config.enable_capture !== false}
+                            onChange={(e) => setConfig({ ...config, enable_capture: e.target.checked })}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                        />
+                        <div>
+                            <span className="text-sm font-medium text-gray-700">Cho phép chụp ảnh AR</span>
+                            <p className="text-xs text-gray-500">User có thể chụp ảnh khi marker được phát hiện</p>
+                        </div>
+                    </label>
+
+                    {/* Show Scan Hint */}
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={config.show_scan_hint !== false}
+                            onChange={(e) => setConfig({ ...config, show_scan_hint: e.target.checked })}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                        />
+                        <div>
+                            <span className="text-sm font-medium text-gray-700">Hiện hướng dẫn scan</span>
+                            <p className="text-xs text-gray-500">Hiển thị thông báo "Hướng camera vào poster"</p>
+                        </div>
+                    </label>
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-700">
+                        💡 <strong>Lưu ý:</strong> Cần upload file <code className="bg-blue-100 px-1 rounded">.mind</code> (marker)
+                        và file <code className="bg-blue-100 px-1 rounded">.glb</code> (3D model) ở tab <strong>Basic Info</strong>.
+                    </p>
                 </div>
             </div>
         )
