@@ -267,8 +267,9 @@ export function createFaceARScene(
 
         filterModel.addEventListener('model-loaded', () => {
             console.log('Filter model loaded!')
-            const mesh = (filterModel as any).getObject3D('mesh')
-            if (mesh) mesh.renderOrder = 999
+            // Do NOT force renderOrder here - it overrides depth buffer masking from occluder
+            // const mesh = (filterModel as any).getObject3D('mesh')
+            // if (mesh) mesh.renderOrder = 999
         })
 
         filterModel.addEventListener('model-error', (e) => {

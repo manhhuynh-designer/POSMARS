@@ -232,6 +232,10 @@ export const DEFAULT_TEMPLATES = {
         
         <a-camera active="false" position="0 0 0"></a-camera>
         
+        <a-entity mindar-face-target="anchorIndex: 168">
+            <a-entity mindar-face-occluder></a-entity>
+        </a-entity>
+
         <a-entity mindar-face-target="anchorIndex: {{anchor_index}}">
             <a-gltf-model 
                 src="#filter" 
