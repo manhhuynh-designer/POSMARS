@@ -125,7 +125,10 @@ export default function EditProjectPage() {
             body: JSON.stringify({ filename: path, contentType: file.type })
         })
 
-        if (!res.ok) throw new Error('Failed to get signed URL')
+        if (!res.ok) {
+            const errData = await res.json()
+            throw new Error(errData.details || errData.error || 'Failed to get signed URL')
+        }
         const { url: signedUrl, publicUrl } = await res.json()
 
         await fetch(signedUrl, {

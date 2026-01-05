@@ -37,20 +37,29 @@ export async function POST(req: NextRequest) {
         const file = bucket.file(filename);
 
         // 3. Generate Signed URL
-        const [url] = await file.getSignedUrl({
-            version: 'v4',
-            action: 'write',
-            expires: Date.now() + 5 * 60 * 1000, // 5 minutes
-            contentType,
-        });
+        try {
+            const [url] = await file.getSignedUrl({
+                version: 'v4',
+                action: 'write',
+                expires: Date.now() + 5 * 60 * 1000, // 5 minutes
+                contentType,
+            });
 
-        // Also generate a public URL for reading (if the bucket is public) 
-        // OR we can rely on the Firebase Storage download URL format
-        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(filename)}?alt=media`;
-
-        return NextResponse.json({ url, publicUrl });
-    } catch (error) {
-        console.error('Error generating signed URL:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(filename)}?alt=media`;
+            return NextResponse.json({ url, publicUrl });
+        } catch (signedUrlError: any) {
+            console.error('getSignedUrl Error Details:', signedUrlError);
+            return NextResponse.json({
+                error: 'Failed to generate signed URL',
+                details: signedUrlError.message,
+                stack: process.env.NODE_ENV === 'development' ? signedUrlError.stack : undefined
+            }, { status: 500 });
+        }
+    } catch (error: any) {
+        console.error('Global Error in /api/upload:', error);
+        return NextResponse.json({
+            error: 'Internal Server Error',
+            details: error.message
+        }, { status: 500 });
     }
 }
