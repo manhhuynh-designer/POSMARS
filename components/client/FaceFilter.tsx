@@ -153,19 +153,15 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
             if (!ctx) throw new Error('Could not create canvas context')
 
-            // Mirroring for selfie mode (Face Filter)
+            // 1. Draw Video background (mirrored for selfie mode)
             ctx.save()
             ctx.translate(videoWidth, 0)
             ctx.scale(-1, 1)
-
-            // 1. Draw Video at full resolution
             ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
-
-            // 2. Draw 3D Scene overlay - scale to match video resolution
-            // AR canvas may have different size, need to stretch to match
-            ctx.drawImage(aframeCanvas, 0, 0, videoWidth, videoHeight)
-
             ctx.restore()
+
+            // 2. Draw 3D Scene overlay (unmirrored, as aframeCanvas is already mirrored in face mode)
+            ctx.drawImage(aframeCanvas, 0, 0, videoWidth, videoHeight)
 
             // Export at high quality
             const imageData = captureCanvas.toDataURL('image/jpeg', 0.95)

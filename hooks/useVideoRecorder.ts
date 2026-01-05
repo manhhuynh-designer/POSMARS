@@ -74,24 +74,26 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
 
         // Start compositing loop
         isRecordingRef.current = true
+        // Start compositing loop
+        isRecordingRef.current = true
         const drawFrame = () => {
             if (!isRecordingRef.current) return
 
-            ctx.save()
+            // Clear canvas
+            ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height)
 
+            // 1. Draw video background (conditionally mirrored)
+            ctx.save()
             if (mirror) {
-                // Flip horizontally
+                // Flip horizontally for selfie mode
                 ctx.translate(compositeCanvas.width, 0)
                 ctx.scale(-1, 1)
             }
-
-            // Draw video background
             ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height)
-
-            // Draw AR overlay
-            ctx.drawImage(arCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height)
-
             ctx.restore()
+
+            // 2. Draw AR overlay (NEVER mirrored manually here, as MindAR already mirrors the canvas for face mode)
+            ctx.drawImage(arCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height)
 
             animationFrameRef.current = requestAnimationFrame(drawFrame)
         }
