@@ -236,6 +236,9 @@ export function createFaceARScene(
         headOccluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
         const headSphere = document.createElement('a-sphere')
 
+        // Add data attribute for real-time updates
+        headSphere.setAttribute('data-occlusion-sphere', 'true')
+
         // Use configurable values with defaults
         const radius = config.occlusion_radius ?? 0.15
         const offsetZ = config.occlusion_offset_z ?? -0.08

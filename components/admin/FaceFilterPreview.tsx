@@ -69,7 +69,7 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         config.rotation_z
     ])
 
-    // Re-init when filter type/URL/debugMode/occlusion changes
+    // Re-init when filter type/URL/anchor/occlusion toggle/debugMode changes
     useEffect(() => {
         if (!loading && containerRef.current) {
             initFaceAR()
@@ -79,11 +79,25 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         config.filter_url,
         config.filter_3d_url,
         config.anchor_position,
-        config.full_head_occlusion,
-        config.occlusion_radius,
-        config.occlusion_offset_z,
+        config.full_head_occlusion,  // Only re-init when toggled on/off
+        // NOT occlusion_radius or occlusion_offset_z - these update in real-time below
         debugMode
     ])
+
+    // Soft Updates for Occlusion Sphere (real-time, no camera restart)
+    useEffect(() => {
+        if (!config.full_head_occlusion) return  // Only update if occlusion is enabled
+
+        const sphere = document.querySelector('a-sphere[data-occlusion-sphere]') as HTMLElement
+        if (sphere) {
+            const radius = config.occlusion_radius ?? 0.15
+            const offsetZ = config.occlusion_offset_z ?? -0.08
+
+            sphere.setAttribute('radius', radius.toString())
+            sphere.setAttribute('position', `0 0.02 ${offsetZ}`)
+            console.log('🔄 Occlusion sphere updated:', { radius, offsetZ })
+        }
+    }, [config.occlusion_radius, config.occlusion_offset_z, config.full_head_occlusion])
 
     const initFaceAR = () => {
         if (!containerRef.current) return
