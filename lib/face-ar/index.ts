@@ -19,6 +19,8 @@ export interface FaceARConfig {
     rotation_x?: number
     rotation_y?: number
     rotation_z?: number
+    /** Enable volumetric head occlusion (for hats/helmets) */
+    full_head_occlusion?: boolean
 }
 
 export interface FaceARSceneOptions {
@@ -212,22 +214,33 @@ export function createFaceARScene(
     dirLight2.setAttribute('position', '-0.5 1 1')
     scene.appendChild(dirLight2)
 
-    // Occluder - Use MindAR's official face occluder for proper depth masking
+    // 1. Standard Face Occluder (Depth mask for face area)
     const occluderAnchor = document.createElement('a-entity')
     occluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
-
-    // MindAR's official occluder - a head-shaped mesh that masks 3D objects behind the face
     const occluderMesh = document.createElement('a-entity')
     occluderMesh.setAttribute('mindar-face-occluder', '')
-
-    // In debug mode, make the occluder visible
     if (debugMode) {
         occluderMesh.setAttribute('material', 'color: green; wireframe: true; opacity: 0.4; transparent: true')
     }
-
     occluderAnchor.appendChild(occluderMesh)
     scene.appendChild(occluderAnchor)
-    console.log('MindAR occluder added, debugMode:', debugMode)
+
+    // 2. Volumetric Head Occluder (For hats/helmets/ears) - Sphere based
+    if (config.full_head_occlusion) {
+        const headOccluderAnchor = document.createElement('a-entity')
+        headOccluderAnchor.setAttribute('mindar-face-target', 'anchorIndex: 168')
+        const headSphere = document.createElement('a-sphere')
+        headSphere.setAttribute('radius', '0.09')
+        headSphere.setAttribute('position', '0 0 -0.05')
+        if (debugMode) {
+            headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true')
+        } else {
+            headSphere.setAttribute('material', 'colorWrite: false; depthWrite: true')
+        }
+        headOccluderAnchor.appendChild(headSphere)
+        scene.appendChild(headOccluderAnchor)
+        console.log('✅ Volumetric head occluder enabled')
+    }
 
     // Face Debug Visualization (optional) - Simple sphere for reliable rendering
     if (showFaceMesh) {
