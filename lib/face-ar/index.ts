@@ -91,6 +91,7 @@ export async function loadFaceARScripts(): Promise<void> {
 
     // Allow MindAR to initialize
     await new Promise(r => setTimeout(r, 500))
+    console.log('✅ Face AR scripts loaded successfully')
 }
 
 // ============================================
@@ -100,9 +101,48 @@ export async function loadFaceARScripts(): Promise<void> {
 /**
  * Register custom A-Frame components for Face AR
  */
-export function registerFaceARComponents(debugMode: boolean = false): void {
+export function registerFaceARComponents(debugMode: boolean = false) {
+    if (typeof window === 'undefined' || !(window as any).AFRAME) {
+        console.warn('A-Frame not loaded, skipping component registration')
+        return
+    }
+
     const AFRAME = (window as any).AFRAME
-    if (!AFRAME) return
+
+    // Custom head occluder component for depth-only sphere rendering
+    AFRAME.registerComponent('head-occluder', {
+        schema: {
+            debug: { type: 'boolean', default: false }
+        },
+        init: function () {
+            this.updateMaterial()
+        },
+        update: function () {
+            this.updateMaterial()
+        },
+        updateMaterial: function () {
+            const mesh = this.el.getObject3D('mesh')
+            if (mesh) {
+                if (this.data.debug) {
+                    // Debug mode: red wireframe visible
+                    mesh.material.color.setHex(0xff0000)
+                    mesh.material.wireframe = true
+                    mesh.material.opacity = 0.3
+                    mesh.material.transparent = true
+                    mesh.material.colorWrite = true
+                    console.log('🔴 Head occluder: DEBUG mode')
+                } else {
+                    // Production mode: invisible but writes depth
+                    mesh.material.colorWrite = false
+                    mesh.material.depthWrite = true
+                    mesh.material.transparent = false
+                    mesh.renderOrder = 0
+                    console.log('⚫ Head occluder: PRODUCTION mode (invisible depth-only)')
+                }
+                mesh.material.needsUpdate = true
+            }
+        }
+    })
 
     // Register fix-occluder component
     if (!AFRAME.components['fix-occluder']) {
@@ -246,18 +286,19 @@ export function createFaceARScene(
         headSphere.setAttribute('radius', radius.toString())
         headSphere.setAttribute('position', `0 0.02 ${offsetZ}`)
 
+        // Use custom head-occluder component for proper depth-only rendering
+        headSphere.setAttribute('head-occluder', `debug: ${debugMode}`)
+        headSphere.setAttribute('material', 'side: double')  // Ensure both sides render
+
         if (debugMode) {
-            console.log(`🔴 Creating RED debug sphere (radius: ${radius}, z: ${offsetZ})`)
-            headSphere.setAttribute('material', 'color: red; wireframe: true; opacity: 0.3; transparent: true; side: double')
+            console.log(`🔴 Creating DEBUG head sphere (radius: ${radius}, z: ${offsetZ})`)
         } else {
-            console.log(`⚫ Creating invisible occluder sphere (radius: ${radius}, z: ${offsetZ})`)
-            // Invisible but writes to depth buffer
-            headSphere.setAttribute('material', 'opacity: 0; transparent: true; depthWrite: true; side: double')
-            headSphere.setAttribute('visible', 'true')  // Must be visible for depth write to work
+            console.log(`⚫ Creating INVISIBLE head sphere (radius: ${radius}, z: ${offsetZ})`)
         }
+
         headOccluderAnchor.appendChild(headSphere)
         scene.appendChild(headOccluderAnchor)
-        console.log('✅ Volumetric head occluder enabled')
+        console.log('✅ Volumetric head occluder enabled with custom component')
     } else {
         console.log('❌ Full head occlusion is disabled')
     }
