@@ -193,13 +193,17 @@ export function registerFaceARComponents(debugMode: boolean = false) {
                     console.log(`✅ fix-occluder: Configured ${meshCount} meshes`)
                 }
 
-                // Try to configure immediately
-                configureOccluder()
+                // Listen for when mesh is added to the entity
+                this.el.addEventListener('object3dset', (event: any) => {
+                    console.log('📦 object3dset event:', event.detail.type)
+                    if (event.detail.type === 'mesh') {
+                        console.log('✨ Mesh was set, configuring now!')
+                        setTimeout(configureOccluder, 50)  // Small delay to ensure mesh is fully ready
+                    }
+                })
 
-                // Also try after delays
-                setTimeout(configureOccluder, 100)
-                setTimeout(configureOccluder, 500)
-                setTimeout(configureOccluder, 1000)
+                // Also try immediate configuration (in case mesh already exists)
+                configureOccluder()
             }
         })
         console.log('✅ fix-occluder component registered')
