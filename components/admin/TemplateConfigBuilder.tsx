@@ -637,13 +637,13 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     <input
                                         type="range"
                                         min="0.05"
-                                        max="0.40"
+                                        max="1.0"
                                         step="0.01"
                                         value={config.occlusion_radius ?? 0.15}
                                         onChange={e => setConfig({ ...config, occlusion_radius: parseFloat(e.target.value) })}
                                         className="w-full accent-pink-500"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh kích thước đầu (lớn hơn = che nhiều hơn) [0.05 - 0.40]</p>
+                                    <p className="text-xs text-gray-500 mt-1">Điều chỉnh kích thước đầu (lớn hơn = che nhiều hơn) [0.05 - 1.0]</p>
                                 </div>
 
                                 {/* Occlusion Offset Z */}
