@@ -128,10 +128,10 @@ export default function ClientPage() {
                             )}
 
                             {/* AR: Image Tracking */}
-                            {template === 'image_tracking' && marker_url && asset_url && (
+                            {template === 'image_tracking' && (
                                 <ImageTracking
-                                    markerUrl={marker_url}
-                                    modelUrl={asset_url}
+                                    markerUrl={marker_url || template_config?.marker_url || ''}
+                                    modelUrl={asset_url || ''}
                                     config={template_config || {}}
                                     onComplete={() => handleInteractionComplete()}
                                     onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}

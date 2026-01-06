@@ -169,9 +169,8 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             const scene = document.querySelector('a-scene')
             if (scene) {
                 const s = scene as any
-                if (s.systems && s.systems['mindar-image-system']) {
-                    s.systems['mindar-image-system'].stop()
-                }
+                // optional chaining to avoid null access
+                s.systems?.['mindar-image-system']?.stop?.()
                 scene.remove()
             }
         }
@@ -183,26 +182,21 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         // Cleanup existing scene if re-initializing
         const oldScene = document.querySelector('a-scene')
         if (oldScene) {
-            const s = oldScene as any
-            if (s.systems && s.systems['mindar-image-system']) {
-                s.systems['mindar-image-system'].stop()
+            try {
+                const s = oldScene as any
+                s.systems?.['mindar-image-system']?.stop?.()
+            } catch (e) {
+                console.warn('⚠️ Image Tracking: Failed to stop existing MindAR system', e)
             }
             oldScene.remove()
         }
 
         const scene = document.createElement('a-scene')
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; cameraFacingMode: ${facingMode}`)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no`)
+        scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
-
-        // PBR Renderer Settings
-        const rendererSettings = [
-            'colorManagement: true',
-            'physicallyCorrectLights: true',
-            'alpha: true',
-            `exposure: ${config.exposure || 1.0}`,
-            `toneMapping: ${config.tone_mapping || 'ACESFilmic'}`
-        ].join(', ')
-        scene.setAttribute('renderer', rendererSettings)
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true')
+        scene.setAttribute('background', 'transparent: true')
 
         // Environment Map
         if (config.environment_url) {
@@ -320,7 +314,14 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         scene.appendChild(targetEntity)
         containerRef.current.appendChild(scene)
 
+        const fallbackTimer = setTimeout(() => {
+            console.warn('⚠️ Image Tracking: arReady timeout - forcing loading=false')
+            setLoading(false)
+        }, 5000)
+
         scene.addEventListener('arReady', () => {
+            console.log('✅ Image Tracking: arReady event fired!')
+            clearTimeout(fallbackTimer) // Clear fallback if ready
             setLoading(false)
         })
 
@@ -331,6 +332,42 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         targetEntity.addEventListener('targetLost', () => {
             setScanning(true)
         })
+
+        // Monitor for when video element is added by MindAR (observe entire subtree)
+        const attachVideo = (video: HTMLVideoElement) => {
+            if (!containerRef.current || containerRef.current.contains(video)) return
+            console.log('📹 Image Tracking: Attaching camera video element')
+            video.style.cssText = 'position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; z-index: 0 !important; background: none !important;'
+            // Prepend video so it's behind the scene
+            containerRef.current.prepend(video)
+        }
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeName === 'VIDEO') {
+                        attachVideo(node as HTMLVideoElement)
+                        observer.disconnect()
+                        return
+                    }
+                    if (node instanceof HTMLElement) {
+                        const vids = node.querySelectorAll('video')
+                        if (vids.length > 0) {
+                            attachVideo(vids[0])
+                            observer.disconnect()
+                            return
+                        }
+                    }
+                }
+            }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+
+        // Fallback: search for video after short delay
+        setTimeout(() => {
+            const video = document.querySelector('video')
+            if (video) attachVideo(video)
+        }, 2000)
     }
 
     const handleCapture = async () => {
@@ -389,7 +426,13 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
 
     return (
         <div className="fixed inset-0 bg-black">
-            <div ref={containerRef} className="w-full h-full" />
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                a-scene { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 1 !important; background: transparent !important; }
+                a-scene canvas { background: transparent !important; position: absolute !important; top: 0 !important; left: 0 !important; }
+                video { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; z-index: 0 !important; background: none !important; }
+            `}} />
+            <div ref={containerRef} className="w-full h-full absolute inset-0" style={{ backgroundColor: 'transparent' }} />
 
             {/* Loading */}
             {loading && (
