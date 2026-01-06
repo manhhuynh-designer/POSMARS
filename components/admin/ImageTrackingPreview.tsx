@@ -232,14 +232,8 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                 if (asset.steps && asset.steps.length > 0) {
                     asset.steps.forEach((step, idx) => {
                         const animAttr = `animation${idx === 0 ? '' : '__' + idx}`
-                        el.setAttribute(animAttr, {
-                            property: step.property,
-                            to: step.to,
-                            dur: step.duration,
-                            easing: step.easing,
-                            autoplay: false, // Wait for events
-                            startEvents: idx === 0 ? 'targetFound' : `animationcomplete${idx === 0 ? '' : '__' + (idx - 1)}`
-                        })
+                        const startEvent = idx === 0 ? 'targetFound' : `animationcomplete${idx === 0 ? '' : '__' + (idx - 1)}`
+                        el.setAttribute(animAttr, `property: ${step.property}; to: ${step.to}; dur: ${step.duration}; easing: ${step.easing}; autoplay: false; startEvents: ${startEvent}`)
                     })
                 }
             }

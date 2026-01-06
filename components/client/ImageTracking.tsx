@@ -265,12 +265,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     let currentStep = 0
                     const playNextStep = () => {
                         const step = asset.steps![currentStep]
-                        model.setAttribute('animation__step', {
-                            property: step.property,
-                            to: step.to,
-                            dur: step.duration,
-                            easing: step.easing
-                        })
+                        model.setAttribute('animation__step', `property: ${step.property}; to: ${step.to}; dur: ${step.duration}; easing: ${step.easing}`)
 
                         model.addEventListener('animationcomplete__step', function handler() {
                             model.removeEventListener('animationcomplete__step', handler)

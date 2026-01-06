@@ -831,8 +831,9 @@ export function generateCodeFromConfig(
     const defaults = template.variables || {}
     for (const [key, defaultValue] of Object.entries(defaults)) {
         const regex = new RegExp(`{{${key}}}`, 'g')
-        html = html.replace(regex, defaultValue)
-        script = script.replace(regex, defaultValue)
+        const stringValue = String(defaultValue)
+        html = html.replace(regex, stringValue)
+        script = script.replace(regex, stringValue)
     }
 
     return { html, script }
