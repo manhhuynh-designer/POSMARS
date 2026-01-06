@@ -405,33 +405,58 @@ export function createFaceARScene(
         filterImage.setAttribute('width', imageWidth.toString())
         filterImage.setAttribute('height', imageHeight.toString())
 
+        console.log('🖼️ 2D Filter created:', {
+            width: imageWidth,
+            height: imageHeight,
+            scale_x: config.scale_x,
+            scale_y: config.scale_y,
+            base_scale: scale,
+            blend_mode: blendMode
+        })
+
         filterImage.setAttribute('position', `${offsetX} ${offsetY} ${offsetZ}`)
         filterImage.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
         filterImage.setAttribute('opacity', '1')
         filterImage.setAttribute('transparent', 'true')
         filterImage.setAttribute('alpha-test', '0.5')  // Better transparency handling
 
-        // Apply blend mode after image loads
+        // Apply blend mode after image texture is loaded
         if (blendMode !== 'normal') {
-            filterImage.addEventListener('loaded', () => {
+            console.log('🎨 Will apply blend mode:', blendMode)
+
+            // A-Frame uses 'materialtextureloaded' for a-image
+            filterImage.addEventListener('materialtextureloaded', () => {
+                console.log('📸 Texture loaded, applying blend mode...')
                 const mesh = (filterImage as any).getObject3D('mesh')
-                if (mesh && mesh.material) {
+                if (mesh) {
                     const THREE = (window as any).AFRAME.THREE
-                    switch (blendMode) {
-                        case 'multiply':
-                            mesh.material.blending = THREE.MultiplyBlending
-                            break
-                        case 'add':
-                            mesh.material.blending = THREE.AdditiveBlending
-                            break
-                        case 'screen':
-                            mesh.material.blending = THREE.AdditiveBlending
-                            mesh.material.opacity = 0.8
-                            break
-                    }
-                    mesh.material.needsUpdate = true
-                    console.log(`🎨 Applied blend mode: ${blendMode}`)
+                    // Traverse to find all meshes with materials
+                    mesh.traverse((child: any) => {
+                        if (child.material) {
+                            switch (blendMode) {
+                                case 'multiply':
+                                    child.material.blending = THREE.MultiplyBlending
+                                    break
+                                case 'add':
+                                    child.material.blending = THREE.AdditiveBlending
+                                    break
+                                case 'screen':
+                                    child.material.blending = THREE.AdditiveBlending
+                                    child.material.opacity = 0.8
+                                    break
+                            }
+                            child.material.needsUpdate = true
+                        }
+                    })
+                    console.log(`✅ Blend mode applied: ${blendMode}`)
+                } else {
+                    console.warn('⚠️ No mesh found for blend mode')
                 }
+            })
+
+            // Also try 'loaded' as fallback
+            filterImage.addEventListener('loaded', () => {
+                console.log('📸 (fallback) loaded event fired')
             })
         }
 
@@ -465,7 +490,10 @@ export function updateFilterTransform(
     filterEntity: HTMLElement | null,
     config: FaceARConfig
 ): void {
-    if (!filterEntity) return
+    if (!filterEntity) {
+        console.log('⏭️ updateFilterTransform: No filterEntity')
+        return
+    }
 
     const scale = config.filter_scale || 0.5
     // Non-uniform scale support
@@ -482,12 +510,15 @@ export function updateFilterTransform(
 
     // Check if it's an a-image (2D) - use width/height instead of scale
     const tagName = filterEntity.tagName?.toLowerCase()
+    console.log('🔄 updateFilterTransform:', { tagName, scaleX, scaleY, scaleZ })
+
     if (tagName === 'a-image') {
         // For 2D, scale affects width/height
         const imageWidth = scaleX * 0.6
         const imageHeight = scaleY * 0.6
         filterEntity.setAttribute('width', imageWidth.toString())
         filterEntity.setAttribute('height', imageHeight.toString())
+        console.log('📐 2D updated:', { width: imageWidth, height: imageHeight })
     } else {
         // For 3D models, use scale attribute
         filterEntity.setAttribute('scale', `${scaleX} ${scaleY} ${scaleZ}`)
