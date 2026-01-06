@@ -418,7 +418,7 @@ export function createFaceARScene(
         filterImage.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
         filterImage.setAttribute('opacity', '1')
         filterImage.setAttribute('transparent', 'true')
-        filterImage.setAttribute('alpha-test', '0.5')  // Better transparency handling
+        filterImage.setAttribute('alpha-test', '0.1')  // Lower threshold for blend modes
 
         // Apply blend mode after image texture is loaded
         if (blendMode !== 'normal') {
@@ -433,22 +433,37 @@ export function createFaceARScene(
                     // Traverse to find all meshes with materials
                     mesh.traverse((child: any) => {
                         if (child.material) {
+                            // Enable proper blending
+                            child.material.transparent = true
+                            child.material.depthWrite = false  // Required for proper blending
+
                             switch (blendMode) {
                                 case 'multiply':
-                                    child.material.blending = THREE.MultiplyBlending
+                                    // CustomBlending for multiply effect
+                                    child.material.blending = THREE.CustomBlending
+                                    child.material.blendEquation = THREE.AddEquation
+                                    child.material.blendSrc = THREE.DstColorFactor
+                                    child.material.blendDst = THREE.ZeroFactor
                                     break
                                 case 'add':
                                     child.material.blending = THREE.AdditiveBlending
                                     break
                                 case 'screen':
-                                    child.material.blending = THREE.AdditiveBlending
-                                    child.material.opacity = 0.8
+                                    // Screen = 1 - (1-a)(1-b)
+                                    child.material.blending = THREE.CustomBlending
+                                    child.material.blendEquation = THREE.AddEquation
+                                    child.material.blendSrc = THREE.OneFactor
+                                    child.material.blendDst = THREE.OneMinusSrcColorFactor
                                     break
                             }
                             child.material.needsUpdate = true
+                            console.log(`✅ Blend mode applied: ${blendMode}`, {
+                                transparent: child.material.transparent,
+                                depthWrite: child.material.depthWrite,
+                                blending: child.material.blending
+                            })
                         }
                     })
-                    console.log(`✅ Blend mode applied: ${blendMode}`)
                 } else {
                     console.warn('⚠️ No mesh found for blend mode')
                 }
