@@ -468,6 +468,11 @@ export function updateFilterTransform(
     if (!filterEntity) return
 
     const scale = config.filter_scale || 0.5
+    // Non-uniform scale support
+    const scaleX = config.scale_x ?? scale
+    const scaleY = config.scale_y ?? scale
+    const scaleZ = config.scale_z ?? scale
+
     const offsetX = config.offset_x || 0
     const offsetY = config.offset_y || 0
     const offsetZ = config.offset_z || 0
@@ -475,7 +480,19 @@ export function updateFilterTransform(
     const rotY = config.rotation_y || 0
     const rotZ = config.rotation_z || 0
 
-    filterEntity.setAttribute('scale', `${scale} ${scale} ${scale}`)
+    // Check if it's an a-image (2D) - use width/height instead of scale
+    const tagName = filterEntity.tagName?.toLowerCase()
+    if (tagName === 'a-image') {
+        // For 2D, scale affects width/height
+        const imageWidth = scaleX * 0.6
+        const imageHeight = scaleY * 0.6
+        filterEntity.setAttribute('width', imageWidth.toString())
+        filterEntity.setAttribute('height', imageHeight.toString())
+    } else {
+        // For 3D models, use scale attribute
+        filterEntity.setAttribute('scale', `${scaleX} ${scaleY} ${scaleZ}`)
+    }
+
     filterEntity.setAttribute('position', `${offsetX} ${offsetY} ${offsetZ}`)
     filterEntity.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
 }

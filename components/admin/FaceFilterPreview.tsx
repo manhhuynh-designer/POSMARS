@@ -61,6 +61,9 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         })
     }, [
         config.filter_scale,
+        config.scale_x,
+        config.scale_y,
+        config.scale_z,
         config.offset_x,
         config.offset_y,
         config.offset_z,
@@ -80,6 +83,7 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
         config.filter_3d_url,
         config.anchor_position,
         config.full_head_occlusion,  // Only re-init when toggled on/off
+        config.blend_mode,  // Blend mode needs re-init since it's applied at scene creation
         // NOT occlusion_radius or occlusion_offset_z - these update in real-time below
         debugMode
     ])
