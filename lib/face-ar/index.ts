@@ -12,6 +12,10 @@ export interface FaceARConfig {
     filter_url?: string
     filter_3d_url?: string
     filter_scale?: number
+    /** Non-uniform scale for 3D models */
+    scale_x?: number
+    scale_y?: number
+    scale_z?: number
     anchor_position?: string
     offset_x?: number
     offset_y?: number
@@ -19,6 +23,8 @@ export interface FaceARConfig {
     rotation_x?: number
     rotation_y?: number
     rotation_z?: number
+    /** Blend mode for 2D images (normal, multiply, add, screen) */
+    blend_mode?: 'normal' | 'multiply' | 'add' | 'screen'
     /** Enable volumetric head occlusion (for hats/helmets) */
     full_head_occlusion?: boolean
     /** Radius of volumetric head occluder sphere (default: 0.15) */
@@ -232,6 +238,10 @@ export function createFaceARScene(
     } = options
 
     const scale = config.filter_scale || 0.5
+    // Non-uniform scale (fallback to uniform scale if not specified)
+    const scaleX = config.scale_x ?? scale
+    const scaleY = config.scale_y ?? scale
+    const scaleZ = config.scale_z ?? scale
     const anchorIndex = ANCHOR_INDICES[config.anchor_position || 'nose_bridge'] || 168
     const offsetX = config.offset_x || 0
     const offsetY = config.offset_y || 0
@@ -239,6 +249,7 @@ export function createFaceARScene(
     const rotX = config.rotation_x || 0
     const rotY = config.rotation_y || 0
     const rotZ = config.rotation_z || 0
+    const blendMode = config.blend_mode || 'normal'
 
     // Create scene
     const scene = document.createElement('a-scene')
@@ -366,7 +377,7 @@ export function createFaceARScene(
         // 3D GLB Model
         const filterModel = document.createElement('a-gltf-model')
         filterModel.setAttribute('src', config.filter_3d_url!)
-        filterModel.setAttribute('scale', `${scale} ${scale} ${scale}`)
+        filterModel.setAttribute('scale', `${scaleX} ${scaleY} ${scaleZ}`)
         filterModel.setAttribute('position', `${offsetX} ${offsetY} ${offsetZ}`)
         filterModel.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
 
@@ -388,17 +399,41 @@ export function createFaceARScene(
         const filterImage = document.createElement('a-image')
         filterImage.setAttribute('src', config.filter_url!)
 
-        // For 2D, scale acts as a multiplier for the default face unit size (~0.3 units)
-        // Width/height give more accurate face mapping than 3D scale
-        const imageSize = scale * 0.6  // 0.6 approximates face width in MindAR units
-        filterImage.setAttribute('width', imageSize.toString())
-        filterImage.setAttribute('height', imageSize.toString())
+        // For 2D, scale acts as width/height multiplier (non-uniform support)
+        const imageWidth = (config.scale_x ?? scale) * 0.6  // 0.6 approximates face width
+        const imageHeight = (config.scale_y ?? scale) * 0.6
+        filterImage.setAttribute('width', imageWidth.toString())
+        filterImage.setAttribute('height', imageHeight.toString())
 
         filterImage.setAttribute('position', `${offsetX} ${offsetY} ${offsetZ}`)
         filterImage.setAttribute('rotation', `${rotX} ${rotY} ${rotZ}`)
         filterImage.setAttribute('opacity', '1')
         filterImage.setAttribute('transparent', 'true')
         filterImage.setAttribute('alpha-test', '0.5')  // Better transparency handling
+
+        // Apply blend mode after image loads
+        if (blendMode !== 'normal') {
+            filterImage.addEventListener('loaded', () => {
+                const mesh = (filterImage as any).getObject3D('mesh')
+                if (mesh && mesh.material) {
+                    const THREE = (window as any).AFRAME.THREE
+                    switch (blendMode) {
+                        case 'multiply':
+                            mesh.material.blending = THREE.MultiplyBlending
+                            break
+                        case 'add':
+                            mesh.material.blending = THREE.AdditiveBlending
+                            break
+                        case 'screen':
+                            mesh.material.blending = THREE.AdditiveBlending
+                            mesh.material.opacity = 0.8
+                            break
+                    }
+                    mesh.material.needsUpdate = true
+                    console.log(`🎨 Applied blend mode: ${blendMode}`)
+                }
+            })
+        }
 
         faceAnchor.appendChild(filterImage)
         filterEntity = filterImage

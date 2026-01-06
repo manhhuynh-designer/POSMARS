@@ -559,6 +559,26 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         <p className="mt-1">Gợi ý: Kính, mũ, râu, stickers...</p>
                                     </div>
                                 </div>
+
+                                {/* Blend Mode for 2D */}
+                                {config.filter_url && (
+                                    <div className="mt-3">
+                                        <label className="block text-sm font-medium mb-2">Chế độ hòa trộn (Blend Mode)</label>
+                                        <select
+                                            value={config.blend_mode || 'normal'}
+                                            onChange={e => setConfig({ ...config, blend_mode: e.target.value as any })}
+                                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                                        >
+                                            <option value="normal">Normal - Hiển thị bình thường</option>
+                                            <option value="multiply">Multiply - Nhân màu (tối hơn)</option>
+                                            <option value="add">Add - Cộng màu (sáng hơn)</option>
+                                            <option value="screen">Screen - Sáng mềm</option>
+                                        </select>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Điều chỉnh cách filter hòa trộn với camera
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -678,6 +698,67 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 className="w-full accent-pink-500"
                             />
                         </div>
+
+                        {/* Non-uniform Scale (Advanced) */}
+                        <details className="border rounded-lg p-3 bg-gray-50">
+                            <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                                📐 Tỉ lệ nâng cao (X/Y/Z riêng biệt)
+                            </summary>
+                            <div className="mt-3 space-y-3">
+                                <p className="text-xs text-gray-500 mb-2">Cho phép kéo dãn filter theo từng chiều riêng biệt</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="text-xs text-gray-600 block mb-1">
+                                            X (Ngang): <span className="text-pink-500">{(config.scale_x ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                        </label>
+                                        <input
+                                            type="range"
+                                            min="0.1"
+                                            max="3"
+                                            step="0.1"
+                                            value={config.scale_x ?? config.filter_scale ?? 0.5}
+                                            onChange={e => setConfig({ ...config, scale_x: parseFloat(e.target.value) })}
+                                            className="w-full accent-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 block mb-1">
+                                            Y (Dọc): <span className="text-pink-500">{(config.scale_y ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                        </label>
+                                        <input
+                                            type="range"
+                                            min="0.1"
+                                            max="3"
+                                            step="0.1"
+                                            value={config.scale_y ?? config.filter_scale ?? 0.5}
+                                            onChange={e => setConfig({ ...config, scale_y: parseFloat(e.target.value) })}
+                                            className="w-full accent-green-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 block mb-1">
+                                            Z (Sâu): <span className="text-pink-500">{(config.scale_z ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                        </label>
+                                        <input
+                                            type="range"
+                                            min="0.1"
+                                            max="3"
+                                            step="0.1"
+                                            value={config.scale_z ?? config.filter_scale ?? 0.5}
+                                            onChange={e => setConfig({ ...config, scale_z: parseFloat(e.target.value) })}
+                                            className="w-full accent-purple-500"
+                                        />
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setConfig({ ...config, scale_x: undefined, scale_y: undefined, scale_z: undefined })}
+                                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                                >
+                                    Reset về tỉ lệ đều
+                                </button>
+                            </div>
+                        </details>
 
                         {/* Offset X */}
                         <div>
