@@ -433,34 +433,37 @@ export function createFaceARScene(
                     // Traverse to find all meshes with materials
                     mesh.traverse((child: any) => {
                         if (child.material) {
-                            // Enable proper blending
+                            // Keep normal blending but adjust properties for effect
                             child.material.transparent = true
-                            child.material.depthWrite = false  // Required for proper blending
 
                             switch (blendMode) {
                                 case 'multiply':
-                                    // CustomBlending for multiply effect
-                                    child.material.blending = THREE.CustomBlending
-                                    child.material.blendEquation = THREE.AddEquation
-                                    child.material.blendSrc = THREE.DstColorFactor
-                                    child.material.blendDst = THREE.ZeroFactor
+                                    // Darker blend - reduce opacity and use subtractive look
+                                    child.material.blending = THREE.NormalBlending
+                                    child.material.opacity = 0.7
+                                    child.material.depthWrite = false
+                                    // Try to darken by adjusting color
+                                    if (child.material.color) {
+                                        child.material.color.multiplyScalar(0.8)
+                                    }
                                     break
                                 case 'add':
+                                    // Additive/glow effect
                                     child.material.blending = THREE.AdditiveBlending
+                                    child.material.opacity = 1.0
+                                    child.material.depthWrite = false
                                     break
                                 case 'screen':
-                                    // Screen = 1 - (1-a)(1-b)
-                                    child.material.blending = THREE.CustomBlending
-                                    child.material.blendEquation = THREE.AddEquation
-                                    child.material.blendSrc = THREE.OneFactor
-                                    child.material.blendDst = THREE.OneMinusSrcColorFactor
+                                    // Lighter blend with transparency
+                                    child.material.blending = THREE.NormalBlending
+                                    child.material.opacity = 0.85
+                                    child.material.depthWrite = false
                                     break
                             }
                             child.material.needsUpdate = true
                             console.log(`✅ Blend mode applied: ${blendMode}`, {
-                                transparent: child.material.transparent,
-                                depthWrite: child.material.depthWrite,
-                                blending: child.material.blending
+                                blending: child.material.blending,
+                                opacity: child.material.opacity
                             })
                         }
                     })
