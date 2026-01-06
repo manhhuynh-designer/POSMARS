@@ -762,3 +762,78 @@ export function getDefaultVariables(templateType: string): Record<string, string
     const template = DEFAULT_TEMPLATES[templateType as keyof typeof DEFAULT_TEMPLATES]
     return template?.variables || {}
 }
+
+/**
+ * Generate code from template config by replacing placeholders
+ * Called when switching from Template mode to Code mode
+ */
+export function generateCodeFromConfig(
+    templateType: string,
+    config: Record<string, any>
+): { html: string; script: string } | null {
+    const template = DEFAULT_TEMPLATES[templateType as keyof typeof DEFAULT_TEMPLATES]
+    if (!template) return null
+
+    let html = template.html
+    let script = template.script
+
+    // Mapping from config keys to template placeholder names
+    const configToPlaceholder: Record<string, string> = {
+        // Face filter
+        filter_url: 'filter_url',
+        filter_3d_url: 'filter_3d_url',
+        filter_scale: 'filter_scale',
+        offset_x: 'offset_x',
+        offset_y: 'offset_y',
+        offset_z: 'offset_z',
+        rotation_x: 'rotation_x',
+        rotation_y: 'rotation_y',
+        rotation_z: 'rotation_z',
+        anchor_position: 'anchor_position',
+        instructions: 'instructions',
+        rules: 'rules',
+
+        // Image tracking
+        marker_url: 'marker_url',
+        model_url: 'model_url',
+        model_scale: 'model_scale',
+        model_position_x: 'model_position_x',
+        model_position_y: 'model_position_y',
+        model_position_z: 'model_position_z',
+        model_rotation_x: 'model_rotation_x',
+        model_rotation_y: 'model_rotation_y',
+        model_rotation_z: 'model_rotation_z',
+
+        // Lucky draw
+        prizes: 'prizes',
+        wheel_colors: 'wheel_colors',
+        max_spins: 'max_spins',
+
+        // AR Checkin
+        background_url: 'background_url',
+        frame_url: 'frame_url',
+        stickers: 'stickers'
+    }
+
+    // Replace all placeholders
+    for (const [configKey, placeholder] of Object.entries(configToPlaceholder)) {
+        const value = config[configKey]
+        if (value !== undefined && value !== null) {
+            // Handle arrays by converting to JSON
+            const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+            const regex = new RegExp(`{{${placeholder}}}`, 'g')
+            html = html.replace(regex, stringValue)
+            script = script.replace(regex, stringValue)
+        }
+    }
+
+    // Replace any remaining placeholders with defaults
+    const defaults = template.variables || {}
+    for (const [key, defaultValue] of Object.entries(defaults)) {
+        const regex = new RegExp(`{{${key}}}`, 'g')
+        html = html.replace(regex, defaultValue)
+        script = script.replace(regex, defaultValue)
+    }
+
+    return { html, script }
+}

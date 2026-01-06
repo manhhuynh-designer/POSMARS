@@ -9,6 +9,7 @@ import TemplateConfigBuilder from '@/components/admin/TemplateConfigBuilder'
 import CustomCodeEditor from '@/components/admin/CustomCodeEditor'
 import LocationManager from '@/components/admin/LocationManager'
 import { getSubdomainUrl, getPathUrl } from '@/lib/utils/url'
+import { generateCodeFromConfig } from '@/lib/templates/default-templates'
 
 type Tab = 'basic' | 'lead_form' | 'template' | 'locations' | 'analytics'
 
@@ -310,7 +311,22 @@ export default function EditProjectPage() {
                             templateType={project.template}
                             onHtmlChange={html => setFormData({ ...formData, custom_html: html })}
                             onScriptChange={script => setFormData({ ...formData, custom_script: script })}
-                            onModeChange={useCustom => setFormData({ ...formData, use_custom_code: useCustom })}
+                            onModeChange={useCustom => {
+                                // When switching TO code mode, auto-generate code from template config
+                                if (useCustom && !formData.use_custom_code && formData.template_config) {
+                                    const generated = generateCodeFromConfig(project.template, formData.template_config)
+                                    if (generated) {
+                                        setFormData({
+                                            ...formData,
+                                            use_custom_code: useCustom,
+                                            custom_html: generated.html,
+                                            custom_script: generated.script
+                                        })
+                                        return
+                                    }
+                                }
+                                setFormData({ ...formData, use_custom_code: useCustom })
+                            }}
                             onUploadAsset={async (file, path) => await uploadFile(file, path)}
                             projectSlug={project.client_slug}
                         />
