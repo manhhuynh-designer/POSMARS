@@ -164,7 +164,7 @@ export default function EditProjectPage() {
     const templateName = TEMPLATE_NAMES[project.template] || project.template
 
     return (
-        <div className="max-w-4xl">
+        <div className="max-w-screen-2xl mx-auto px-4">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
@@ -341,7 +341,7 @@ export default function EditProjectPage() {
                                     onUpload={async (file, path) => await uploadFile(file, path)}
                                 />
                                 {/* Fallback JSON for debugging/other templates without builder */}
-                                {!['lucky_draw', 'ar_checkin', 'face_filter'].includes(project.template) && (
+                                {!['lucky_draw', 'ar_checkin', 'face_filter', 'image_tracking'].includes(project.template) && (
                                     <div className="mt-8 border-t pt-4">
                                         <p className="text-xs text-gray-400 mb-2">Advanced Config (JSON)</p>
                                         <textarea

@@ -25,29 +25,37 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
 
     // Initial Setup - Load scripts and create scene
     useEffect(() => {
+        let isMounted = true
+
         const init = async () => {
             try {
-                // Check if already loaded
-                if ((window as any).MINDAR?.FACE) {
-                    initFaceAR()
-                    return
-                }
-
                 await loadFaceARScripts()
                 registerFaceARComponents(true) // Debug mode ON for admin
-                initFaceAR()
+                if (isMounted) initFaceAR()
             } catch (e) {
-                console.error('Failed to load AR scripts:', e)
-                setError('Không thể tải thư viện Face AR')
-                setLoading(false)
+                if (isMounted) {
+                    console.error('Failed to load AR scripts:', e)
+                    setError('Không thể tải thư viện Face AR')
+                    setLoading(false)
+                }
             }
         }
 
         init()
 
         return () => {
+            isMounted = false
             const scene = containerRef.current?.querySelector('a-scene')
-            if (scene) scene.remove()
+            if (scene) {
+                // @ts-ignore
+                const mindarSystem = scene.systems?.['mindar-face-system']
+                if (mindarSystem) mindarSystem.stop()
+                scene.remove()
+            }
+            // Stop camera tracks
+            navigator.mediaDevices?.getUserMedia({ video: true })
+                .then(stream => stream.getTracks().forEach(track => track.stop()))
+                .catch(() => { })
         }
     }, [])
 
@@ -186,6 +194,11 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
                 contain: 'strict',
             }}
         >
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                a-scene canvas { background: none !important; }
+                video { background: none !important; }
+            `}} />
             <div
                 ref={containerRef}
                 className="w-full h-full"

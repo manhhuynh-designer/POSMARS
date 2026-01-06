@@ -3,17 +3,62 @@ import { useEffect, useRef, useState } from 'react'
 import { Camera, X, RotateCcw, Check, Download, Video, Square } from 'lucide-react'
 import { useVideoRecorder } from '@/hooks/useVideoRecorder'
 
+interface AnimationStep {
+    id: string
+    property: 'position' | 'rotation' | 'scale'
+    to: string
+    duration: number
+    easing: string
+}
+
+interface ARAsset {
+    id: string
+    name: string
+    type: '3d' | 'video'
+    url: string
+    scale: number
+    position: [number, number, number]
+    rotation: [number, number, number]
+
+    // Video settings
+    video_width?: number
+    video_height?: number
+    video_autoplay?: boolean
+    video_loop?: boolean
+    video_muted?: boolean
+
+    // Animation settings
+    animation_mode?: 'auto' | 'loop_clips' | 'tap_to_play'
+    enable_tap_animation?: boolean
+    steps?: AnimationStep[]
+    loop_animation?: boolean
+}
+
 interface ImageTrackingConfig {
+    assets: ARAsset[]
+
+    // Lighting & Render
+    ambient_intensity?: number
+    directional_intensity?: number
+    environment_url?: string
+    exposure?: number
+    tone_mapping?: 'None' | 'Linear' | 'Reinhard' | 'Cineon' | 'ACESFilmic'
+
+    // Legacy support
     model_scale?: number
     model_position?: [number, number, number]
     model_rotation?: [number, number, number]
+
+    // Options
     show_scan_hint?: boolean
     enable_capture?: boolean
+    max_video_duration?: number
+    capture_quality?: 'standard' | 'high'
 }
 
 interface ImageTrackingProps {
     markerUrl: string
-    modelUrl: string
+    modelUrl?: string // Legacy or primary model
     config: ImageTrackingConfig
     onComplete: () => void
     onCapture?: (imageUrl: string) => void
@@ -27,6 +72,21 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
     const [captured, setCaptured] = useState(false)
     const [capturedImage, setCapturedImage] = useState<string | null>(null)
     const [showVideoPreview, setShowVideoPreview] = useState(false)
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
+
+    // Migration logic for old configs
+    const finalAssets = config.assets || [
+        {
+            id: 'legacy-1',
+            name: 'Primary Model',
+            type: '3d',
+            url: modelUrl || '',
+            scale: config.model_scale || 1,
+            position: config.model_position || [0, 0, 0],
+            rotation: config.model_rotation || [0, 0, 0],
+            animation_mode: 'auto'
+        }
+    ]
 
     // Video recording hook
     const {
@@ -37,24 +97,16 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         stopRecording,
         clearRecording,
         downloadRecording
-    } = useVideoRecorder({ maxDuration: 30 })
+    } = useVideoRecorder({ maxDuration: config.max_video_duration || 30 })
 
     // Enable capture if onCapture prop is provided or config.enable_capture is true
     const enableCapture = Boolean(onCapture || config.enable_capture)
 
-    console.log('ImageTracking Render Info:', {
-        loading,
-        scanning,
-        captured,
-        showVideoPreview,
-        enableCapture,
-        isRecording
-    })
-
     useEffect(() => {
         const loadScripts = async () => {
             try {
-                if ((window as any).MINDAR) {
+                // Already loaded?
+                if ((window as any).AFRAME && (window as any).MINDAR) {
                     initAR()
                     return
                 }
@@ -78,6 +130,18 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     attempts++
                 }
                 if (!(window as any).AFRAME) throw new Error('AFRAME failed to load')
+
+                // Load A-Frame Extras (FOR ANIMATION MIXER)
+                if (!document.getElementById('aframe-extras-script')) {
+                    const extrasScript = document.createElement('script')
+                    extrasScript.id = 'aframe-extras-script'
+                    extrasScript.src = 'https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v7.0.0/dist/aframe-extras.min.js'
+                    await new Promise((resolve, reject) => {
+                        extrasScript.onload = resolve
+                        extrasScript.onerror = reject
+                        document.head.appendChild(extrasScript)
+                    })
+                }
 
                 // Load MindAR
                 if (!document.getElementById('mindar-image-script')) {
@@ -103,52 +167,173 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
 
         return () => {
             const scene = document.querySelector('a-scene')
-            if (scene) scene.remove()
+            if (scene) {
+                const s = scene as any
+                if (s.systems && s.systems['mindar-image-system']) {
+                    s.systems['mindar-image-system'].stop()
+                }
+                scene.remove()
+            }
         }
-    }, [])
+    }, [facingMode])
 
     const initAR = () => {
         if (!containerRef.current) return
 
-        const scale = config.model_scale || 1
-        const pos = config.model_position || [0, 0, 0]
-        const rot = config.model_rotation || [0, 0, 0]
+        // Cleanup existing scene if re-initializing
+        const oldScene = document.querySelector('a-scene')
+        if (oldScene) {
+            const s = oldScene as any
+            if (s.systems && s.systems['mindar-image-system']) {
+                s.systems['mindar-image-system'].stop()
+            }
+            oldScene.remove()
+        }
 
         const scene = document.createElement('a-scene')
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no`)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; cameraFacingMode: ${facingMode}`)
         scene.setAttribute('color-space', 'sRGB')
-        scene.setAttribute('renderer', 'colorManagement: true, physicallyCorrectLights')
+
+        // PBR Renderer Settings
+        const rendererSettings = [
+            'colorManagement: true',
+            'physicallyCorrectLights: true',
+            'alpha: true',
+            `exposure: ${config.exposure || 1.0}`,
+            `toneMapping: ${config.tone_mapping || 'ACESFilmic'}`
+        ].join(', ')
+        scene.setAttribute('renderer', rendererSettings)
+
+        // Environment Map
+        if (config.environment_url) {
+            scene.setAttribute('environment', `src: ${config.environment_url}; equirectangular: true`)
+        }
+
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
+
+        // Lights
+        const ambientLight = document.createElement('a-light')
+        ambientLight.setAttribute('type', 'ambient')
+        ambientLight.setAttribute('intensity', (config.ambient_intensity || 1.0).toString())
+        scene.appendChild(ambientLight)
+
+        const directionalLight = document.createElement('a-light')
+        directionalLight.setAttribute('type', 'directional')
+        directionalLight.setAttribute('position', '0 10 10')
+        directionalLight.setAttribute('intensity', (config.directional_intensity || 0.5).toString())
+        scene.appendChild(directionalLight)
 
         const camera = document.createElement('a-camera')
         camera.setAttribute('position', '0 0 0')
         camera.setAttribute('look-controls', 'enabled: false')
         scene.appendChild(camera)
 
-        const entity = document.createElement('a-entity')
-        entity.setAttribute('mindar-image-target', 'targetIndex: 0')
+        const targetEntity = document.createElement('a-entity')
+        targetEntity.setAttribute('mindar-image-target', 'targetIndex: 0')
 
-        const model = document.createElement('a-gltf-model')
-        model.setAttribute('src', modelUrl)
-        model.setAttribute('scale', `${scale} ${scale} ${scale}`)
-        model.setAttribute('position', `${pos[0]} ${pos[1]} ${pos[2]}`)
-        model.setAttribute('rotation', `${rot[0]} ${rot[1]} ${rot[2]}`)
-        model.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear')
-        entity.appendChild(model)
+        // Render Assets
+        finalAssets.forEach((asset) => {
+            if (!asset.url) return
 
-        scene.appendChild(entity)
+            const assetEntity = document.createElement('a-entity')
+            assetEntity.setAttribute('id', asset.id)
+            assetEntity.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
+            assetEntity.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
+            assetEntity.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
+
+            if (asset.type === '3d') {
+                const model = document.createElement('a-gltf-model')
+                model.setAttribute('src', asset.url)
+
+                // Animation Logic
+                if (asset.animation_mode === 'auto') {
+                    model.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear')
+                } else if (asset.animation_mode === 'loop_clips') {
+                    model.setAttribute('animation-mixer', 'clip: *; loop: repeat; timeScale: 1')
+                } else if (asset.animation_mode === 'tap_to_play') {
+                    model.classList.add('clickable')
+                    model.setAttribute('animation-mixer', 'clip: *; loop: once; clampWhenFinished: true')
+                    model.addEventListener('click', () => {
+                        const mixer = (model as any).components['animation-mixer']
+                        if (mixer) mixer.play()
+                    })
+                }
+
+                // Sequential Steps
+                if (asset.steps && asset.steps.length > 0) {
+                    let currentStep = 0
+                    const playNextStep = () => {
+                        const step = asset.steps![currentStep]
+                        model.setAttribute('animation__step', {
+                            property: step.property,
+                            to: step.to,
+                            dur: step.duration,
+                            easing: step.easing
+                        })
+
+                        model.addEventListener('animationcomplete__step', function handler() {
+                            model.removeEventListener('animationcomplete__step', handler)
+                            currentStep++
+                            if (currentStep < asset.steps!.length) {
+                                playNextStep()
+                            } else if (asset.loop_animation) {
+                                currentStep = 0
+                                playNextStep()
+                            }
+                        })
+                    }
+                    playNextStep()
+                }
+
+                assetEntity.appendChild(model)
+            } else if (asset.type === 'video') {
+                const videoId = `video-${asset.id}`
+                let videoEl = document.getElementById(videoId) as HTMLVideoElement
+
+                if (!videoEl) {
+                    videoEl = document.createElement('video')
+                    videoEl.id = videoId
+                    videoEl.src = asset.url
+                    videoEl.setAttribute('crossorigin', 'anonymous')
+                    videoEl.setAttribute('webkit-playsinline', '')
+                    videoEl.setAttribute('playsinline', '')
+                    if (asset.video_loop !== false) videoEl.setAttribute('loop', '')
+                    if (asset.video_muted) videoEl.muted = true
+                    document.body.appendChild(videoEl)
+                }
+
+                const plane = document.createElement('a-video')
+                plane.setAttribute('src', `#${videoId}`)
+                plane.setAttribute('width', (asset.video_width || 1).toString())
+                plane.setAttribute('height', (asset.video_height || 0.56).toString())
+
+                targetEntity.addEventListener('targetFound', () => {
+                    if (asset.video_autoplay !== false) videoEl.play().catch(e => console.warn('Autoplay failed', e))
+                })
+
+                targetEntity.addEventListener('targetLost', () => {
+                    videoEl.pause()
+                })
+
+                assetEntity.appendChild(plane)
+            }
+
+            targetEntity.appendChild(assetEntity)
+        })
+
+        scene.appendChild(targetEntity)
         containerRef.current.appendChild(scene)
 
         scene.addEventListener('arReady', () => {
             setLoading(false)
         })
 
-        entity.addEventListener('targetFound', () => {
+        targetEntity.addEventListener('targetFound', () => {
             setScanning(false)
         })
 
-        entity.addEventListener('targetLost', () => {
+        targetEntity.addEventListener('targetLost', () => {
             setScanning(true)
         })
     }
@@ -284,7 +469,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     {isRecording && (
                         <div className="flex items-center gap-2 mt-3 bg-black/60 px-4 py-2 rounded-full">
                             <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-white text-sm font-medium">{recordingTime}s / 30s</span>
+                            <span className="text-white text-sm font-medium">{recordingTime}s / {config.max_video_duration || 30}s</span>
                         </div>
                     )}
                 </div>
@@ -368,15 +553,26 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 </div>
             )}
 
-            {/* Close Button */}
-            {!captured && (
-                <button
-                    onClick={onComplete}
-                    className="absolute top-4 right-4 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center text-white z-20"
-                >
-                    <X size={24} />
-                </button>
-            )}
+            {/* Close & Toggle Buttons */}
+            <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+                {!captured && (
+                    <button
+                        onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+                        className="w-10 h-10 bg-black/50 rounded-full flex items-center justify-center text-white"
+                        title="Đổi Camera"
+                    >
+                        <RotateCcw size={20} />
+                    </button>
+                )}
+                {!captured && (
+                    <button
+                        onClick={onComplete}
+                        className="w-10 h-10 bg-black/50 rounded-full flex items-center justify-center text-white"
+                    >
+                        <X size={24} />
+                    </button>
+                )}
+            </div>
         </div>
     )
 }

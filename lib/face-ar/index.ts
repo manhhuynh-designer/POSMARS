@@ -258,11 +258,14 @@ export function createFaceARScene(
     const scene = document.createElement('a-scene')
     scene.setAttribute('mindar-face', 'autoStart: true; uiLoading: no; uiError: no; uiScanning: no')
     scene.setAttribute('embedded', '')
+    scene.setAttribute('background', 'transparent: true')
     scene.setAttribute('vr-mode-ui', 'enabled: false')
     scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
     if (colorManagement) {
-        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true;')
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; alpha: true')
+    } else {
+        scene.setAttribute('renderer', 'alpha: true')
     }
 
     // Default styles
@@ -275,7 +278,7 @@ export function createFaceARScene(
 
     // Camera
     const camera = document.createElement('a-camera')
-    camera.setAttribute('active', 'false')
+    camera.setAttribute('active', 'true')
     camera.setAttribute('position', '0 0 0')
     camera.setAttribute('look-controls', 'enabled: false')
     scene.appendChild(camera)
@@ -567,7 +570,9 @@ export function setupVideoStyles(container: HTMLElement): void {
         video.setAttribute('autoplay', '')
         video.setAttribute('muted', '')
 
-        container.appendChild(video)
+        if (!container.contains(video)) {
+            container.appendChild(video)
+        }
         video.style.position = 'absolute'
         video.style.top = '0'
         video.style.left = '0'
@@ -575,5 +580,6 @@ export function setupVideoStyles(container: HTMLElement): void {
         video.style.height = '100%'
         video.style.objectFit = 'cover'
         video.style.zIndex = '0'
+        console.log('📹 Face AR: Camera video element styled and attached to container')
     }
 }
