@@ -709,42 +709,42 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 <div className="grid grid-cols-3 gap-2">
                                     <div>
                                         <label className="text-xs text-gray-600 block mb-1">
-                                            X (Ngang): <span className="text-pink-500">{(config.scale_x ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                            X (Ngang): <span className="text-pink-500">{(config.scale_x ?? 1.0).toFixed(1)}x</span>
                                         </label>
                                         <input
                                             type="range"
-                                            min="0.1"
-                                            max="3"
+                                            min="0.5"
+                                            max="2"
                                             step="0.1"
-                                            value={config.scale_x ?? config.filter_scale ?? 0.5}
+                                            value={config.scale_x ?? 1.0}
                                             onChange={e => setConfig({ ...config, scale_x: parseFloat(e.target.value) })}
                                             className="w-full accent-blue-500"
                                         />
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-600 block mb-1">
-                                            Y (Dọc): <span className="text-pink-500">{(config.scale_y ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                            Y (Dọc): <span className="text-pink-500">{(config.scale_y ?? 1.0).toFixed(1)}x</span>
                                         </label>
                                         <input
                                             type="range"
-                                            min="0.1"
-                                            max="3"
+                                            min="0.5"
+                                            max="2"
                                             step="0.1"
-                                            value={config.scale_y ?? config.filter_scale ?? 0.5}
+                                            value={config.scale_y ?? 1.0}
                                             onChange={e => setConfig({ ...config, scale_y: parseFloat(e.target.value) })}
                                             className="w-full accent-green-500"
                                         />
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-600 block mb-1">
-                                            Z (Sâu): <span className="text-pink-500">{(config.scale_z ?? config.filter_scale ?? 0.5).toFixed(1)}</span>
+                                            Z (Sâu): <span className="text-pink-500">{(config.scale_z ?? 1.0).toFixed(1)}x</span>
                                         </label>
                                         <input
                                             type="range"
-                                            min="0.1"
-                                            max="3"
+                                            min="0.5"
+                                            max="2"
                                             step="0.1"
-                                            value={config.scale_z ?? config.filter_scale ?? 0.5}
+                                            value={config.scale_z ?? 1.0}
                                             onChange={e => setConfig({ ...config, scale_z: parseFloat(e.target.value) })}
                                             className="w-full accent-purple-500"
                                         />

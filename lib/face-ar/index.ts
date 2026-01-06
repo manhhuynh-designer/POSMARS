@@ -238,10 +238,13 @@ export function createFaceARScene(
     } = options
 
     const scale = config.filter_scale || 0.5
-    // Non-uniform scale (fallback to uniform scale if not specified)
-    const scaleX = config.scale_x ?? scale
-    const scaleY = config.scale_y ?? scale
-    const scaleZ = config.scale_z ?? scale
+    // Non-uniform scale: scale_x/y/z are multipliers on top of base scale (default 1.0 = uniform)
+    const scaleMultiplierX = config.scale_x ?? 1.0
+    const scaleMultiplierY = config.scale_y ?? 1.0
+    const scaleMultiplierZ = config.scale_z ?? 1.0
+    const scaleX = scale * scaleMultiplierX
+    const scaleY = scale * scaleMultiplierY
+    const scaleZ = scale * scaleMultiplierZ
     const anchorIndex = ANCHOR_INDICES[config.anchor_position || 'nose_bridge'] || 168
     const offsetX = config.offset_x || 0
     const offsetY = config.offset_y || 0
@@ -514,10 +517,15 @@ export function updateFilterTransform(
     }
 
     const scale = config.filter_scale || 0.5
-    // Non-uniform scale support
-    const scaleX = config.scale_x ?? scale
-    const scaleY = config.scale_y ?? scale
-    const scaleZ = config.scale_z ?? scale
+    // Non-uniform scale: scale_x/y/z are multipliers on top of base scale
+    // If scale_x is 1.0, final = scale * 1.0 = scale (uniform)
+    // If scale_x is 1.5, final = scale * 1.5 (wider)
+    const scaleMultiplierX = config.scale_x ?? 1.0
+    const scaleMultiplierY = config.scale_y ?? 1.0
+    const scaleMultiplierZ = config.scale_z ?? 1.0
+    const scaleX = scale * scaleMultiplierX
+    const scaleY = scale * scaleMultiplierY
+    const scaleZ = scale * scaleMultiplierZ
 
     const offsetX = config.offset_x || 0
     const offsetY = config.offset_y || 0
@@ -528,7 +536,7 @@ export function updateFilterTransform(
 
     // Check if it's an a-image (2D) - use width/height instead of scale
     const tagName = filterEntity.tagName?.toLowerCase()
-    console.log('🔄 updateFilterTransform:', { tagName, scaleX, scaleY, scaleZ })
+    console.log('🔄 updateFilterTransform:', { tagName, scale, scaleX, scaleY, scaleZ })
 
     if (tagName === 'a-image') {
         // For 2D, scale affects width/height
