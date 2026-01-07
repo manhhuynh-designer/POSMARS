@@ -185,7 +185,7 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
 
     return (
         <div
-            className="bg-gray-900 rounded-lg relative"
+            className="bg-[#0a0a0a] rounded-lg relative"
             style={{
                 height: '100%',
                 width: '100%',
@@ -216,18 +216,18 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
                 </span>
                 <button
                     onClick={onClose}
-                    className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
+                    className="w-8 h-8 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-white/40 hover:text-white hover:bg-pink-500 hover:border-pink-500 transition-all active:scale-90"
                 >
-                    <X size={14} />
+                    <X size={16} />
                 </button>
             </div>
 
             {/* Loading */}
             {loading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
-                    <div className="text-center text-white">
-                        <div className="animate-spin w-8 h-8 border-2 border-white/30 border-t-pink-500 rounded-full mx-auto mb-2" />
-                        <p className="text-sm">Đang khởi động camera...</p>
+                    <div className="text-center">
+                        <div className="animate-spin w-10 h-10 border-2 border-white/5 border-t-pink-500 rounded-full mx-auto mb-4 shadow-[0_0_15px_rgba(236,72,153,0.3)]" />
+                        <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">Đang khởi động camera...</p>
                     </div>
                 </div>
             )}

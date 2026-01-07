@@ -11,6 +11,14 @@ interface AnimationStep {
     easing: string
 }
 
+interface VideoKeyframe {
+    id: string
+    time: number
+    property: 'position' | 'rotation' | 'scale' | 'opacity'
+    value: string
+    easing: string
+}
+
 interface ARAsset {
     id: string
     name: string
@@ -32,6 +40,10 @@ interface ARAsset {
     enable_tap_animation?: boolean
     steps?: AnimationStep[]
     loop_animation?: boolean
+
+    // Video Keyframes
+    keyframes?: VideoKeyframe[]
+    animation_duration?: number
 }
 
 interface ImageTrackingConfig {
@@ -176,10 +188,33 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         }
     }, [facingMode])
 
+
+
     const initAR = () => {
         if (!containerRef.current) return
 
-        // Cleanup existing scene if re-initializing
+        // Register custom component for Model Opacity if not exists
+        if (!(window as any).AFRAME.components['model-opacity']) {
+            (window as any).AFRAME.registerComponent('model-opacity', {
+                schema: { default: 1.0 },
+                init: function () {
+                    this.el.addEventListener('model-loaded', this.update.bind(this));
+                },
+                update: function () {
+                    var mesh = this.el.getObject3D('mesh');
+                    var data = this.data;
+                    if (!mesh) { return; }
+                    mesh.traverse(function (node: any) {
+                        if (node.isMesh) {
+                            node.material.transparent = true;
+                            node.material.opacity = data;
+                            node.material.needsUpdate = true;
+                        }
+                    });
+                }
+            });
+        }
+
         const oldScene = document.querySelector('a-scene')
         if (oldScene) {
             try {
@@ -188,20 +223,20 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             } catch (e) {
                 console.warn('⚠️ Image Tracking: Failed to stop existing MindAR system', e)
             }
-            oldScene.remove()
+            try {
+                oldScene.remove()
+            } catch (e) {
+                console.warn('⚠️ Image Tracking: Failed to remove scene', e)
+            }
         }
 
         const scene = document.createElement('a-scene')
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no`)
+        // Added smoothing filters: filterMinCF:0.01; filterBeta: 10 (Responsive)
+        // Improved sensitivity: missTolerance: 10; warmupTolerance: 1
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.01; filterBeta: 10; missTolerance: 10; warmupTolerance: 1`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true')
-        scene.setAttribute('background', 'transparent: true')
-
-        // Environment Map
-        if (config.environment_url) {
-            scene.setAttribute('environment', `src: ${config.environment_url}; equirectangular: true`)
-        }
 
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
@@ -218,6 +253,9 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         directionalLight.setAttribute('intensity', (config.directional_intensity || 0.5).toString())
         scene.appendChild(directionalLight)
 
+        // Note: Environment map (HDR) is NOT used in AR mode - it would block camera
+        // HDR environment is only visible in Studio Mode preview
+
         const camera = document.createElement('a-camera')
         camera.setAttribute('position', '0 0 0')
         camera.setAttribute('look-controls', 'enabled: false')
@@ -225,6 +263,40 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
 
         const targetEntity = document.createElement('a-entity')
         targetEntity.setAttribute('mindar-image-target', 'targetIndex: 0')
+
+        const applyKeyframes = (el: HTMLElement, asset: ARAsset) => {
+            if (!asset.keyframes || asset.keyframes.length === 0) return;
+            const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+            const props = ['position', 'rotation', 'scale', 'opacity'];
+
+            props.forEach(prop => {
+                const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                if (kfsForProp.length === 0) return;
+
+                kfsForProp.forEach((kf, idx) => {
+                    const animName = `animation__kf_${prop}_${idx}`;
+                    const prevKf = kfsForProp[idx - 1];
+
+                    const startTime = prevKf ? prevKf.time : 0;
+                    const duration = (kf.time - startTime) * 1000; // to ms
+                    const delay = startTime * 1000;
+
+                    let propertyName = prop;
+                    if (prop === 'opacity') {
+                        if (el.tagName === 'A-GLTF-MODEL') {
+                            propertyName = 'model-opacity';
+                            // Initialize
+                            el.setAttribute('model-opacity', '1');
+                        } else {
+                            propertyName = 'material.opacity';
+                        }
+                    }
+
+                    const animValue = `property: ${propertyName}; from: ${prevKf ? prevKf.value : (prop === 'scale' ? "1 1 1" : (prop === 'opacity' ? "1" : "0 0 0"))}; to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: targetFound; autoplay: false;`
+                    el.setAttribute(animName, animValue)
+                });
+            });
+        }
 
         // Render Assets
         finalAssets.forEach((asset) => {
@@ -240,39 +312,12 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 const model = document.createElement('a-gltf-model')
                 model.setAttribute('src', asset.url)
 
-                // Animation Logic
-                if (asset.animation_mode === 'auto') {
-                    model.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear')
-                } else if (asset.animation_mode === 'loop_clips') {
-                    model.setAttribute('animation-mixer', 'clip: *; loop: repeat; timeScale: 1')
-                } else if (asset.animation_mode === 'tap_to_play') {
-                    model.classList.add('clickable')
-                    model.setAttribute('animation-mixer', 'clip: *; loop: once; clampWhenFinished: true')
-                    model.addEventListener('click', () => {
-                        const mixer = (model as any).components['animation-mixer']
-                        if (mixer) mixer.play()
-                    })
-                }
-
-                // Sequential Steps
-                if (asset.steps && asset.steps.length > 0) {
-                    let currentStep = 0
-                    const playNextStep = () => {
-                        const step = asset.steps![currentStep]
-                        model.setAttribute('animation__step', `property: ${step.property}; to: ${step.to}; dur: ${step.duration}; easing: ${step.easing}`)
-
-                        model.addEventListener('animationcomplete__step', function handler() {
-                            model.removeEventListener('animationcomplete__step', handler)
-                            currentStep++
-                            if (currentStep < asset.steps!.length) {
-                                playNextStep()
-                            } else if (asset.loop_animation) {
-                                currentStep = 0
-                                playNextStep()
-                            }
-                        })
-                    }
-                    playNextStep()
+                // Pro Mixer Keyframes (Option B)
+                // Now unified consistent logic with Admin Preview
+                if (asset.keyframes && asset.keyframes.length > 0) {
+                    applyKeyframes(model, asset);
+                } else {
+                    // Default static state if no keyframes
                 }
 
                 assetEntity.appendChild(model)
@@ -283,25 +328,80 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 if (!videoEl) {
                     videoEl = document.createElement('video')
                     videoEl.id = videoId
-                    videoEl.src = asset.url
+                    videoEl.setAttribute('src', asset.url)
                     videoEl.setAttribute('crossorigin', 'anonymous')
-                    videoEl.setAttribute('webkit-playsinline', '')
-                    videoEl.setAttribute('playsinline', '')
-                    if (asset.video_loop !== false) videoEl.setAttribute('loop', '')
-                    if (asset.video_muted) videoEl.muted = true
+                    videoEl.setAttribute('playsinline', 'true')
+                    videoEl.setAttribute('webkit-playsinline', 'true')
+                    videoEl.preload = 'auto'
+                    videoEl.muted = true // Important for autoplay
+                    videoEl.loop = asset.video_loop !== false
+
+                    // Hide via CSS but keep in layout for playback
+                    videoEl.style.position = 'absolute'
+                    videoEl.style.top = '0'
+                    videoEl.style.left = '0'
+                    videoEl.style.opacity = '0'
+                    videoEl.style.zIndex = '-1'
+                    videoEl.style.pointerEvents = 'none'
+
                     document.body.appendChild(videoEl)
+
+                    // Event listeners for debugging and state handling
+                    videoEl.addEventListener('loadeddata', () => {
+                        console.log(`🎥 Video ${videoId} buffered data. ReadyState: ${videoEl.readyState}`)
+                    })
+                    videoEl.addEventListener('error', (e) => {
+                        console.error(`❌ Video ${videoId} error:`, videoEl.error)
+                    })
+
+                    // Try playing immediately to "warm up" (will likely pause if not visible/interacted)
+                    // But for AR, we often want it to start when target found.
+                    // However, A-Frame needs a valid texture. 
+                    // Let's only load it. Play on targetFound.
+                    videoEl.load()
                 }
 
                 const plane = document.createElement('a-video')
                 plane.setAttribute('src', `#${videoId}`)
+                // Use a standard material first to debug, then flat. 
+                // Flat is correct for "screen" effect.
+                plane.setAttribute('material', 'shader: flat; src: #' + videoId + '; transparent: true')
                 plane.setAttribute('width', (asset.video_width || 1).toString())
                 plane.setAttribute('height', (asset.video_height || 0.56).toString())
 
+                // Video Keyframes
+                applyKeyframes(plane, asset);
+
+                // Error handling: Visual feedback in AR
+                videoEl.addEventListener('error', (e) => {
+                    console.error(`❌ Video ${videoId} error:`, videoEl.error)
+                    // Change plane to red to indicate error
+                    plane.setAttribute('material', 'shader: flat; color: #ff0000; opacity: 0.7')
+                    // Optional: Add text entity "ERROR"
+                    const text = document.createElement('a-text')
+                    text.setAttribute('value', 'DECODE ERROR\n(Check Codec)')
+                    text.setAttribute('align', 'center')
+                    text.setAttribute('scale', '0.5 0.5 0.5')
+                    text.setAttribute('position', '0 0 0.1')
+                    plane.appendChild(text)
+                })
+
                 targetEntity.addEventListener('targetFound', () => {
-                    if (asset.video_autoplay !== false) videoEl.play().catch(e => console.warn('Autoplay failed', e))
+                    console.log(`🎯 Target Found! Attempting to play video ${videoId}`)
+                    if (asset.video_autoplay !== false) {
+                        videoEl.play()
+                            .then(() => console.log(`▶️ Video ${videoId} playing`))
+                            .catch(e => {
+                                console.warn(`⚠️ Video ${videoId} play failed:`, e)
+                                // If failed, try muted
+                                videoEl.muted = true
+                                videoEl.play().catch(err => console.error('Double fail', err))
+                            })
+                    }
                 })
 
                 targetEntity.addEventListener('targetLost', () => {
+                    console.log(`❌ Target Lost. Pausing video ${videoId}`)
                     videoEl.pause()
                 })
 
@@ -332,6 +432,8 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         targetEntity.addEventListener('targetLost', () => {
             setScanning(true)
         })
+
+
 
         // Monitor for when video element is added by MindAR (observe entire subtree)
         const attachVideo = (video: HTMLVideoElement) => {

@@ -1,15 +1,16 @@
 'use client'
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import {
     Plus, Trash2, GripVertical, Upload, Image as ImageIcon, Eye,
     Settings, Layers, Video, Box, Activity, ChevronRight, HelpCircle,
     RefreshCw, Play, SkipForward, Sun, Maximize, Smartphone,
-    Camera, Check, Sparkles, Loader2
+    Camera, Check, Sparkles, Loader2, Clock, Minus
 } from 'lucide-react'
 
-// Dynamic imports for Previews (camera only loaded when needed)
 const FaceFilterPreview = lazy(() => import('./FaceFilterPreview'))
 const ImageTrackingPreview = lazy(() => import('./ImageTrackingPreview'))
+const StudioPreview = lazy(() => import('./StudioPreview'))
+import ProMixerTimeline from './ProMixerTimeline'
 
 // Lucky Draw Types
 export interface Prize {
@@ -41,6 +42,14 @@ export interface AnimationStep {
     easing: string
 }
 
+export interface VideoKeyframe {
+    id: string
+    time: number           // Timestamp in seconds (0 = targetFound)
+    property: 'position' | 'rotation' | 'scale' | 'opacity'
+    value: string          // "0 0.5 0" for position/rotation, "1.2" for scale, "0.8" for opacity
+    easing: string         // 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+}
+
 export interface ARAsset {
     id: string
     name: string
@@ -61,6 +70,9 @@ export interface ARAsset {
     // Sequential Animation
     steps?: AnimationStep[]
     loop_animation?: boolean
+    // Video Keyframes (Option B)
+    keyframes?: VideoKeyframe[]
+    animation_duration?: number
 }
 
 export interface ImageTrackingConfig {
@@ -95,13 +107,17 @@ interface TemplateConfigBuilderProps {
 
 export default function TemplateConfigBuilder({ template, initialConfig, onChange, onUpload }: TemplateConfigBuilderProps) {
     const [config, setConfig] = useState<any>(initialConfig)
-    const [uploading, setUploading] = useState(false)
+    const [uploadingField, setUploadingField] = useState<string | null>(null)
 
     // UI State for premium templates
     const [activeTab, setActiveTab] = useState<string>('content')
     const [showPreview, setShowPreview] = useState(false)
     const [debugMode, setDebugMode] = useState(true)
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
+
+    // Pro Mixer Redesign State
+    const [selectedKeyframeIds, setSelectedKeyframeIds] = useState<string[]>([])
+    const [previewMode, setPreviewMode] = useState<'ar' | 'studio'>('ar')
 
     useEffect(() => {
         onChange(config)
@@ -118,8 +134,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                     url: '',
                     scale: config.model_scale || 1,
                     position: config.model_position || [0, 0, 0],
-                    rotation: config.model_rotation || [0, 0, 0],
-                    animation_mode: 'auto'
+                    rotation: config.model_rotation || [0, 0, 0]
                 }
                 setConfig({ ...config, assets: [legacyAsset] })
                 setSelectedAssetId('legacy-1')
@@ -134,16 +149,16 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         if (!file) return
 
         try {
-            setUploading(true)
+            setUploadingField(subPath)
             const url = await onUpload(file, `${subPath}/${Date.now()}_${file.name}`)
             if (key !== 'temp_url' && key !== 'temp') {
                 setConfig({ ...config, [key]: url })
             }
-            setUploading(false)
+            setUploadingField(null)
             return url
         } catch (error) {
             console.error(error)
-            setUploading(false)
+            setUploadingField(null)
             alert('Upload thất bại')
             return null
         }
@@ -181,12 +196,12 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         if (!file) return
 
         try {
-            setUploading(true)
+            setUploadingField(`prize-${index}`)
             const url = await onUpload(file, `prizes/${Date.now()}_${file.name}`)
             updatePrize(index, { image: url })
-            setUploading(false)
+            setUploadingField(null)
         } catch (error) {
-            setUploading(false)
+            setUploadingField(null)
         }
     }
 
@@ -204,17 +219,17 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 {/* Left Column: Configuration */}
                 <div className="flex-1 space-y-8">
                     {/* Header & Tabs */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-6 rounded-3xl border border-white/5 shadow-2xl backdrop-blur-xl">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-200">
+                            <div className="w-12 h-12 rounded-2xl bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-900/20">
                                 <Activity size={24} />
                             </div>
                             <div>
-                                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter">Lucky Draw</h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Premium Configuration</p>
+                                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Lucky Draw</h3>
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Premium Configuration</p>
                             </div>
                         </div>
-                        <div className="flex bg-gray-100/80 p-1 rounded-2xl border border-gray-200/50">
+                        <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
                             {[
                                 { id: 'prizes', icon: <Layers size={14} />, label: 'Prizes' },
                                 { id: 'branding', icon: <ImageIcon size={14} />, label: 'Branding' },
@@ -223,7 +238,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeTab === tab.id ? 'bg-white text-orange-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-900 uppercase tracking-tighter'}`}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeTab === tab.id ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-white/60 hover:text-white uppercase tracking-tighter'}`}
                                 >
                                     {tab.icon} {tab.label}
                                 </button>
@@ -238,7 +253,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 <div className="space-y-1">
                                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500">Prize Management</h4>
                                     <div className="flex items-center gap-2">
-                                        <div className={`text-xs font-black px-2 py-0.5 rounded ${totalProb === 100 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-500'}`}>
+                                        <div className={`text-xs font-black px-2 py-0.5 rounded ${totalProb === 100 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                                             TOTAL: {totalProb}%
                                         </div>
                                         {totalProb !== 100 && <span className="text-[9px] font-bold text-red-400 italic">Needs to be exactly 100%</span>}
@@ -246,7 +261,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 </div>
                                 <button
                                     onClick={addPrize}
-                                    className="px-6 py-3 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition active:scale-95 shadow-xl flex items-center gap-2"
+                                    className="px-6 py-3 bg-orange-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 transition active:scale-95 shadow-[0_0_20px_rgba(249,115,22,0.3)] flex items-center gap-2"
                                 >
                                     <Plus size={14} /> Add New Prize
                                 </button>
@@ -255,66 +270,66 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                             <div className="grid grid-cols-1 gap-4">
                                 {prizes.length > 0 ? (
                                     prizes.map((prize: Prize, idx: number) => (
-                                        <div key={idx} className="group bg-white border border-gray-100 p-4 rounded-[2rem] shadow-sm hover:shadow-md hover:border-orange-200 transition-all duration-300">
+                                        <div key={idx} className="group bg-[#121212] border border-white/5 p-4 rounded-[2rem] shadow-xl hover:border-orange-500/30 transition-all duration-300">
                                             <div className="flex items-center gap-6">
-                                                <div className="relative w-20 h-20 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-transform">
+                                                <div className="relative w-20 h-20 rounded-2xl bg-black border border-white/5 flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-transform">
                                                     {prize.image ? (
                                                         <img src={prize.image} className="w-full h-full object-contain p-2" />
                                                     ) : (
-                                                        <ImageIcon size={24} className="text-gray-300" />
+                                                        <ImageIcon size={24} className="text-white/10" />
                                                     )}
                                                     <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={e => handlePrizeImageUpload(e, idx)} />
-                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <div className="absolute inset-0 bg-orange-600/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                         <Upload size={16} className="text-white" />
                                                     </div>
                                                 </div>
 
                                                 <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                                                     <div className="md:col-span-5 space-y-1">
-                                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Prize Name</label>
+                                                        <label className="text-[9px] font-black text-white/50 uppercase tracking-widest">Prize Name</label>
                                                         <input
                                                             value={prize.name}
                                                             onChange={e => updatePrize(idx, { name: e.target.value })}
-                                                            className="w-full bg-transparent border-none p-0 text-sm font-black text-gray-800 focus:ring-0 placeholder:text-gray-300"
+                                                            className="w-full bg-transparent border-none p-0 text-sm font-black text-white focus:ring-0 placeholder:text-white/10"
                                                             placeholder="Enter prize name..."
                                                         />
                                                     </div>
                                                     <div className="md:col-span-3 space-y-1">
-                                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest text-center block">Probability (%)</label>
+                                                        <label className="text-[9px] font-black text-white/50 uppercase tracking-widest text-center block">Probability (%)</label>
                                                         <div className="flex items-center gap-2">
                                                             <input
                                                                 type="number"
                                                                 value={prize.probability}
                                                                 onChange={e => updatePrize(idx, { probability: Number(e.target.value) })}
-                                                                className="w-full bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-black text-center focus:border-orange-500 outline-none"
+                                                                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-black text-center text-white focus:border-orange-500 outline-none"
                                                             />
                                                         </div>
                                                     </div>
                                                     <div className="md:col-span-3 space-y-1">
-                                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest text-center block">Theme Color</label>
+                                                        <label className="text-[9px] font-black text-white/50 uppercase tracking-widest text-center block">Theme Color</label>
                                                         <div className="flex items-center justify-center gap-2">
                                                             <input
                                                                 type="color"
                                                                 value={prize.color}
                                                                 onChange={e => updatePrize(idx, { color: e.target.value })}
-                                                                className="w-10 h-10 border-4 border-white shadow-sm rounded-xl cursor-pointer p-0"
+                                                                className="w-10 h-10 border-4 border-black shadow-lg rounded-xl cursor-pointer p-0"
                                                             />
-                                                            <span className="font-mono text-[9px] font-bold text-gray-400 uppercase">{prize.color}</span>
+                                                            <span className="font-mono text-[9px] font-bold text-white/50 uppercase">{prize.color}</span>
                                                         </div>
                                                     </div>
                                                     <div className="md:col-span-1 flex justify-end">
-                                                        <button onClick={() => removePrize(idx)} className="p-3 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={18} /></button>
+                                                        <button onClick={() => removePrize(idx)} className="p-3 text-white/10 hover:text-red-500 hover:bg-red-500/10 rounded-2xl transition-all"><Trash2 size={18} /></button>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))
                                 ) : (
-                                    <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-[2.5rem] p-12 text-center space-y-4">
-                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto text-gray-300"><Plus size={32} /></div>
+                                    <div className="bg-black/40 border-2 border-dashed border-white/10 rounded-[2.5rem] p-12 text-center space-y-4">
+                                        <div className="w-16 h-16 bg-[#121212] rounded-2xl shadow-xl flex items-center justify-center mx-auto text-white/10 border border-white/5"><Plus size={32} /></div>
                                         <div>
-                                            <p className="text-sm font-black text-gray-900 uppercase tracking-tighter">No prizes added yet</p>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Add your first prize to start the wheel</p>
+                                            <p className="text-sm font-black text-white uppercase tracking-tighter">No prizes added yet</p>
+                                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Add your first prize to start the wheel</p>
                                         </div>
                                     </div>
                                 )}
@@ -324,52 +339,52 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
                     {activeTab === 'branding' && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-                            <section className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm space-y-8">
-                                <div className="flex items-center gap-2 border-b border-gray-50 pb-6">
+                            <section className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
+                                <div className="flex items-center gap-2 border-b border-white/5 pb-6">
                                     <ImageIcon size={14} className="text-orange-500" />
-                                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Visual Branding</h4>
+                                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Visual Branding</h4>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                                     {/* Logo & Banner */}
                                     <div className="space-y-8">
                                         <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Brand Logo</label>
-                                            <div className="flex items-center gap-6 p-6 bg-gray-50/50 rounded-3xl border border-gray-100">
-                                                <div className="relative w-20 h-20 rounded-2xl bg-white border border-gray-200 p-2 shadow-sm flex-shrink-0">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Brand Logo</label>
+                                            <div className="flex items-center gap-6 p-6 bg-black/40 rounded-3xl border border-white/5">
+                                                <div className="relative w-24 h-24 rounded-2xl bg-black border border-white/10 p-2 shadow-inner flex-shrink-0">
                                                     {config.logo_url ? (
                                                         <>
                                                             <img src={config.logo_url} className="w-full h-full object-contain" />
                                                             <button onClick={() => updateConfig('logo_url', '')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-lg border-2 border-white shadow-lg"><Trash2 size={10} /></button>
                                                         </>
                                                     ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon size={24} /></div>
+                                                        <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={24} /></div>
                                                     )}
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold py-2 px-4 bg-white border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition shadow-sm inline-block">
+                                                    <label className="text-[10px] font-bold py-2 px-4 bg-orange-500 text-white rounded-xl cursor-pointer hover:bg-orange-600 transition shadow-lg inline-block">
                                                         UPLOAD LOGO
                                                         <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'logo_url', 'logos')} />
                                                     </label>
-                                                    <p className="text-[9px] text-gray-400 font-medium">Clear PNG, 512x512px</p>
+                                                    <p className="text-[9px] text-white/40 font-medium">Clear PNG, 512x512px</p>
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Header Banner</label>
-                                            <div className="relative aspect-[21/9] rounded-3xl border-2 border-dashed border-gray-200 bg-gray-50/30 overflow-hidden group">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Header Banner</label>
+                                            <div className="relative aspect-[21/9] rounded-3xl border-2 border-dashed border-white/10 bg-black/40 overflow-hidden group">
                                                 {config.banner_url ? (
                                                     <>
                                                         <img src={config.banner_url} className="w-full h-full object-cover" />
-                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                            <button onClick={() => updateConfig('banner_url', '')} className="bg-red-500 text-white p-2 rounded-xl"><Trash2 size={16} /></button>
+                                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                                                            <button onClick={() => updateConfig('banner_url', '')} className="bg-red-500 text-white p-3 rounded-2xl shadow-2xl transition hover:bg-red-600"><Trash2 size={20} /></button>
                                                         </div>
                                                     </>
                                                 ) : (
-                                                    <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-orange-50/30 transition-colors">
-                                                        <Upload size={24} className="text-gray-300" />
-                                                        <span className="text-[10px] font-black text-gray-400 uppercase mt-2">Upload Banner</span>
+                                                    <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-orange-500/10 transition-colors">
+                                                        <Upload size={24} className="text-white/40" />
+                                                        <span className="text-[10px] font-black text-white/60 uppercase mt-2">Upload Banner</span>
                                                         <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'banner_url', 'branding')} />
                                                     </label>
                                                 )}
@@ -380,9 +395,9 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     {/* Asset Customization */}
                                     <div className="space-y-8">
                                         <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Custom Center Button</label>
-                                            <div className="p-6 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-4 text-center">
-                                                <div className="relative w-24 h-24 mx-auto rounded-full bg-white border border-gray-200 p-2 shadow-inner flex items-center justify-center overflow-hidden">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Custom Center Button</label>
+                                            <div className="p-6 bg-black/40 rounded-3xl border border-white/5 space-y-4 text-center">
+                                                <div className="relative w-24 h-24 mx-auto rounded-full bg-black border border-white/10 p-2 shadow-2xl flex items-center justify-center overflow-hidden">
                                                     {config.spin_btn_url ? (
                                                         <>
                                                             <img src={config.spin_btn_url} className="w-full h-full object-contain" />
@@ -392,7 +407,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                         <span className="text-[10px] font-black text-orange-500 uppercase">QUAY</span>
                                                     )}
                                                 </div>
-                                                <label className="text-[10px] font-bold py-2 px-6 bg-white border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition shadow-sm inline-block">
+                                                <label className="text-[10px] font-bold py-2 px-6 bg-[#121212] border border-white/5 text-white/60 rounded-xl cursor-pointer hover:bg-white hover:text-black transition shadow-lg inline-block">
                                                     REPLACE BUTTON
                                                     <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'spin_btn_url', 'branding')} />
                                                 </label>
@@ -400,19 +415,19 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         </div>
 
                                         <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Wheel Pointer Icon</label>
-                                            <div className="flex items-center gap-6 p-6 bg-gray-50/50 rounded-3xl border border-gray-100">
-                                                <div className="w-16 h-16 bg-white rounded-2xl border border-gray-200 flex items-center justify-center p-2 relative">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Wheel Pointer Icon</label>
+                                            <div className="flex items-center gap-6 p-6 bg-black/40 rounded-3xl border border-white/5">
+                                                <div className="w-16 h-16 bg-black rounded-2xl border border-white/10 flex items-center justify-center p-2 relative">
                                                     {config.pointer_url ? (
                                                         <>
                                                             <img src={config.pointer_url} className="w-full h-full object-contain" />
                                                             <button onClick={() => updateConfig('pointer_url', '')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-lg border-2 border-white"><Trash2 size={10} /></button>
                                                         </>
                                                     ) : (
-                                                        <span className="text-2xl">▼</span>
+                                                        <span className="text-2xl text-white">▼</span>
                                                     )}
                                                 </div>
-                                                <label className="text-[10px] font-bold py-2 px-4 bg-white border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition shadow-sm inline-block">
+                                                <label className="text-[10px] font-bold py-2 px-4 bg-[#121212] border border-white/5 text-white/60 rounded-xl cursor-pointer hover:bg-white hover:text-black transition shadow-lg inline-block">
                                                     UPLOAD POINTER
                                                     <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'pointer_url', 'branding')} />
                                                 </label>
@@ -426,24 +441,24 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
                     {activeTab === 'rules' && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-                            <section className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm space-y-6">
-                                <div className="flex items-center gap-2 border-b border-gray-50 pb-6">
+                            <section className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl space-y-6">
+                                <div className="flex items-center gap-2 border-b border-white/5 pb-6">
                                     <Settings size={14} className="text-orange-500" />
-                                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Game Rules & Terns</h4>
+                                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Game Rules & Terms</h4>
                                 </div>
                                 <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Nội dung thể lệ (HTML Supported)</label>
+                                    <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Nội dung thể lệ (HTML Supported)</label>
                                     <textarea
                                         value={config.rules_text || ''}
                                         onChange={e => updateConfig('rules_text', e.target.value)}
-                                        className="w-full bg-gray-50 border border-gray-100 p-6 rounded-[2rem] text-sm font-mono leading-relaxed outline-none focus:border-orange-400 focus:bg-white transition-all shadow-inner"
+                                        className="w-full bg-black/40 border border-white/10 p-6 rounded-[2rem] text-sm text-white font-mono leading-relaxed outline-none focus:border-orange-500/50 transition-all shadow-inner"
                                         rows={10}
                                         placeholder="Enter rules here..."
                                     />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/50">
-                                            <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mb-1">💡 Tip</p>
-                                            <p className="text-[10px] text-blue-500 italic">Sử dụng &lt;b&gt; hoặc &lt;li&gt; để làm nổi bật nội dung.</p>
+                                        <div className="bg-blue-500/10 p-4 rounded-2xl border border-blue-500/10">
+                                            <p className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mb-1">💡 Tip</p>
+                                            <p className="text-[10px] text-blue-400/60 italic">Sử dụng &lt;b&gt; hoặc &lt;li&gt; để làm nổi bật nội dung.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -457,28 +472,28 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                     <div className="xl:sticky xl:top-8 space-y-6">
                         <div className="flex items-center justify-between mb-2 px-2">
                             <div className="space-y-1">
-                                <h3 className="font-black text-xl text-gray-900 uppercase tracking-tighter flex items-center gap-2">
+                                <h3 className="font-black text-xl text-white uppercase tracking-tighter flex items-center gap-2">
                                     Game Preview
                                 </h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em]">Live Spin Simulation</p>
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.2em]">Live Spin Simulation</p>
                             </div>
                         </div>
 
                         {/* Phone Container Aspect 9:16 */}
-                        <div className="relative w-full aspect-[9/16] bg-[#0c0c0c] rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.3)] border-[12px] border-gray-900 ring-2 ring-gray-900/10 transition-transform duration-500 hover:scale-[1.02] overflow-hidden">
+                        <div className="relative w-full aspect-[9/16] bg-black rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] border-[12px] border-[#1a1a1a] ring-1 ring-white/5 transition-transform duration-500 hover:scale-[1.02] overflow-hidden">
                             {/* Inner Screen */}
-                            <div className="relative w-full h-full rounded-[2.5rem] overflow-hidden bg-white flex flex-col">
+                            <div className="relative w-full h-full rounded-[2.5rem] overflow-hidden bg-[#0a0a0a] flex flex-col border border-white/5">
                                 {/* Theme Mockup */}
-                                <div className="absolute inset-0 bg-gray-50">
+                                <div className="absolute inset-0 bg-[#0a0a0a]">
                                     {/* Header Banner Mockup */}
-                                    <div className="h-24 w-full bg-orange-100 relative overflow-hidden">
+                                    <div className="h-24 w-full bg-white/5 relative overflow-hidden">
                                         {config.banner_url ? (
                                             <img src={config.banner_url} className="w-full h-full object-cover" />
                                         ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-orange-200 font-black text-2xl rotate-3">LUCKY DRAW</div>
+                                            <div className="w-full h-full flex items-center justify-center text-white/5 font-black text-2xl rotate-3 text-center px-4 uppercase">LUCKY DRAW</div>
                                         )}
                                         {config.logo_url && (
-                                            <img src={config.logo_url} className="absolute bottom-4 left-4 w-10 h-10 bg-white rounded shadow-lg p-1" />
+                                            <img src={config.logo_url} className="absolute bottom-4 left-4 w-10 h-10 bg-black/40 border border-white/10 rounded-xl shadow-lg p-1" />
                                         )}
                                     </div>
 
@@ -486,16 +501,16 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     <div className="mt-12 flex flex-col items-center justify-center space-y-10">
                                         <div className="relative">
                                             {/* Pointer */}
-                                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-10 h-10 z-20 drop-shadow-lg">
+                                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-10 h-10 z-20 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]">
                                                 {config.pointer_url ? (
                                                     <img src={config.pointer_url} className="w-full h-full object-contain" />
                                                 ) : (
-                                                    <div className="text-red-600 text-3xl">▼</div>
+                                                    <div className="text-orange-500 text-3xl">▼</div>
                                                 )}
                                             </div>
 
                                             {/* Wheel Disk */}
-                                            <div className="w-64 h-64 rounded-full border-[8px] border-orange-500 bg-white shadow-2xl relative overflow-hidden flex items-center justify-center">
+                                            <div className="w-64 h-64 rounded-full border-[8px] border-orange-500/20 bg-black shadow-[0_0_40px_rgba(249,115,22,0.1)] relative overflow-hidden flex items-center justify-center border-dashed">
                                                 {prizes.length > 0 ? (
                                                     <div className="w-full h-full relative" style={{ transform: 'rotate(0deg)' }}>
                                                         {prizes.map((p: Prize, i: number) => {
@@ -505,43 +520,43 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                                     key={i}
                                                                     className="absolute top-0 left-1/2 -translate-x-1/2 h-full origin-bottom"
                                                                     style={{
-                                                                        width: '2px',
+                                                                        width: '1px',
                                                                         transform: `rotate(${i * angle}deg)`,
-                                                                        background: 'rgba(0,0,0,0.05)'
+                                                                        background: 'rgba(255,255,255,0.05)'
                                                                     }}
                                                                 >
-                                                                    <div className="absolute top-4 -translate-x-1/2 w-8 h-8 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: p.color || '#eee' }}></div>
+                                                                    <div className="absolute top-4 -translate-x-1/2 w-8 h-8 rounded-full border border-white/20 shadow-xl" style={{ backgroundColor: p.color || '#333' }}></div>
                                                                 </div>
                                                             )
                                                         })}
                                                     </div>
                                                 ) : (
-                                                    <div className="text-[10px] font-black text-gray-300 uppercase italic">Add Prizes</div>
+                                                    <div className="text-[10px] font-black text-white/10 uppercase italic">Add Prizes</div>
                                                 )}
 
                                                 {/* Center Button */}
-                                                <div className="absolute inset-0 m-auto w-16 h-16 bg-white rounded-full shadow-xl border-4 border-orange-500 z-10 flex items-center justify-center overflow-hidden">
+                                                <div className="absolute inset-0 m-auto w-16 h-16 bg-[#121212] rounded-full shadow-2xl border-4 border-orange-500 z-10 flex items-center justify-center overflow-hidden">
                                                     {config.spin_btn_url ? (
                                                         <img src={config.spin_btn_url} className="w-full h-full object-contain" />
                                                     ) : (
-                                                        <span className="text-[8px] font-black text-orange-600">SPIN</span>
+                                                        <span className="text-[8px] font-black text-white uppercase tracking-widest">SPIN</span>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="w-48 h-10 bg-orange-500 rounded-full shadow-lg shadow-orange-200 flex items-center justify-center">
-                                            <span className="text-white font-black text-xs uppercase tracking-widest">Quay Thử</span>
+                                        <div className="w-48 h-10 bg-orange-500 rounded-full shadow-lg shadow-orange-900/40 flex items-center justify-center active:scale-95 transition-all cursor-pointer">
+                                            <span className="text-white font-black text-[10px] uppercase tracking-[0.2em]">Live Simulation</span>
                                         </div>
                                     </div>
 
                                     {/* Rules placeholder */}
                                     <div className="mt-8 px-6 space-y-4">
-                                        <div className="h-2 w-24 bg-gray-200 rounded-full"></div>
+                                        <div className="h-2 w-24 bg-white/5 rounded-full"></div>
                                         <div className="space-y-2">
-                                            <div className="h-1.5 w-full bg-gray-100 rounded-full"></div>
-                                            <div className="h-1.5 w-full bg-gray-100 rounded-full"></div>
-                                            <div className="h-1.5 w-3/4 bg-gray-100 rounded-full"></div>
+                                            <div className="h-1.5 w-full bg-white/2 rounded-full"></div>
+                                            <div className="h-1.5 w-full bg-white/2 rounded-full"></div>
+                                            <div className="h-1.5 w-3/4 bg-white/2 rounded-full"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -549,13 +564,13 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
 
                         {/* Stats Label */}
-                        <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 flex-shrink-0 animate-bounce">
+                        <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 flex items-center gap-4 shadow-2xl">
+                            <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 flex-shrink-0 animate-pulse">
                                 <Sparkles size={18} />
                             </div>
                             <div>
-                                <h5 className="text-[10px] font-black uppercase text-gray-900 tracking-tight">Gamification Ready</h5>
-                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">{prizes.length} Prizes Configured</p>
+                                <h5 className="text-[10px] font-black uppercase text-white tracking-tight">Gamification Ready</h5>
+                                <p className="text-[9px] text-white/60 font-bold uppercase tracking-widest mt-0.5">{prizes.length} Prizes Configured</p>
                             </div>
                         </div>
                     </div>
@@ -575,35 +590,35 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 {/* Left Column: Configuration */}
                 <div className="flex-1 space-y-8">
                     {/* Header */}
-                    <div className="flex items-center gap-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                    <div className="flex items-center gap-4 bg-[#121212] p-6 rounded-3xl border border-white/5 shadow-2xl backdrop-blur-xl">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-900/20">
                             <Camera size={24} />
                         </div>
                         <div>
-                            <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter">AR Check-in</h3>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Premium Configuration</p>
+                            <h3 className="text-xl font-black text-white uppercase tracking-tighter">AR Check-in</h3>
+                            <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Premium Configuration</p>
                         </div>
                     </div>
 
                     <div className="space-y-6">
                         {/* Frame Upload Section */}
-                        <section className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm space-y-8">
-                            <div className="flex items-center gap-2 border-b border-gray-50 pb-6">
+                        <section className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl space-y-8">
+                            <div className="flex items-center gap-2 border-b border-white/5 pb-6">
                                 <Layers size={14} className="text-blue-500" />
-                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Frame Configuration</h4>
+                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Frame Configuration</h4>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                 <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Event Frame (.PNG)</label>
-                                    <div className="relative aspect-[9/16] rounded-[2.5rem] border-2 border-dashed border-gray-200 bg-gray-50/30 flex flex-col items-center justify-center p-6 group hover:border-blue-400 hover:bg-blue-50/30 transition-all duration-500 cursor-pointer overflow-hidden">
+                                    <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Event Frame (.PNG)</label>
+                                    <div className="relative aspect-[9/16] rounded-[2.5rem] border-2 border-dashed border-white/10 bg-black/40 flex flex-col items-center justify-center p-6 group hover:border-blue-400 hover:bg-blue-500/5 transition-all duration-500 cursor-pointer overflow-hidden shadow-inner">
                                         {config.frame_url ? (
                                             <div className="relative w-full h-full">
                                                 <img src={config.frame_url} className="w-full h-full object-contain drop-shadow-2xl" />
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm rounded-2xl">
+                                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm rounded-2xl">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); updateConfig('frame_url', '') }}
-                                                        className="bg-red-500 text-white p-3 rounded-2xl hover:bg-red-600 transition shadow-xl"
+                                                        className="bg-red-500 text-white p-3 rounded-2xl hover:bg-red-600 transition shadow-2xl"
                                                     >
                                                         <Trash2 size={20} />
                                                     </button>
@@ -611,36 +626,36 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             </div>
                                         ) : (
                                             <div className="text-center space-y-4">
-                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
-                                                    <Upload size={24} className="text-blue-500" />
+                                                <div className="w-16 h-16 bg-[#1a1a1a] rounded-2xl shadow-xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform border border-white/5">
+                                                    {uploadingField === 'frames' ? <Loader2 size={24} className="text-blue-500 animate-spin" /> : <Upload size={24} className="text-blue-500" />}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-black text-gray-900 uppercase">Upload Frame</p>
-                                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">PNG Transparent ONLY</p>
+                                                    <p className="text-sm font-black text-white uppercase tracking-tighter">{uploadingField === 'frames' ? 'Uploading...' : 'Upload Frame'}</p>
+                                                    <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">PNG Transparent ONLY</p>
                                                 </div>
                                             </div>
                                         )}
-                                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept=".png" onChange={e => handleFileUpload(e, 'frame_url', 'frames')} />
+                                        <input type="file" disabled={uploadingField === 'frames'} className="absolute inset-0 opacity-0 cursor-pointer" accept=".png" onChange={e => handleFileUpload(e, 'frame_url', 'frames')} />
                                     </div>
                                 </div>
 
                                 <div className="space-y-8">
                                     <div className="space-y-4">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">User Instructions</label>
+                                        <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">User Instructions</label>
                                         <textarea
                                             value={config.instructions || ''}
                                             onChange={e => updateConfig('instructions', e.target.value)}
-                                            className="w-full bg-gray-50 border border-gray-100 p-6 rounded-[2rem] text-sm font-medium leading-relaxed outline-none focus:border-blue-400 focus:bg-white transition-all shadow-inner"
+                                            className="w-full bg-black/40 border border-white/10 p-6 rounded-[2rem] text-sm text-white font-medium leading-relaxed outline-none focus:border-blue-500/50 transition-all shadow-inner"
                                             rows={6}
                                             placeholder="Ví dụ: Hãy cười thật tươi và tạo dáng cùng thần tượng..."
                                         />
                                     </div>
 
-                                    <div className="bg-blue-50 p-6 rounded-[2rem] border border-blue-100 space-y-3">
-                                        <h5 className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
+                                    <div className="bg-blue-500/5 p-6 rounded-[2rem] border border-blue-500/10 space-y-3">
+                                        <h5 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
                                             <HelpCircle size={14} /> Design Tips
                                         </h5>
-                                        <ul className="text-[10px] text-blue-500 font-bold space-y-2 uppercase tracking-tight">
+                                        <ul className="text-[10px] text-blue-400/60 font-bold space-y-2 uppercase tracking-tight">
                                             <li className="flex items-start gap-2">• Sử dụng ảnh PNG tách nền</li>
                                             <li className="flex items-start gap-2">• Kích thước chuẩn: 1080x1920px</li>
                                             <li className="flex items-start gap-2">• Để chừa khoảng trống ở giữa cho gương mặt</li>
@@ -657,19 +672,19 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                     <div className="xl:sticky xl:top-8 space-y-6">
                         <div className="flex items-center justify-between mb-2 px-2">
                             <div className="space-y-1">
-                                <h3 className="font-black text-xl text-gray-900 uppercase tracking-tighter flex items-center gap-2">
+                                <h3 className="font-black text-xl text-white uppercase tracking-tighter flex items-center gap-2">
                                     Frame Preview
                                 </h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em]">AR Overlay Simulation</p>
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.2em]">AR Overlay Simulation</p>
                             </div>
                         </div>
 
                         {/* Phone Container Aspect 9:16 */}
-                        <div className="relative w-full aspect-[9/16] bg-[#0c0c0c] rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.3)] border-[12px] border-gray-900 ring-2 ring-gray-900/10 transition-transform duration-500 hover:scale-[1.02] overflow-hidden">
+                        <div className="relative w-full aspect-[9/16] bg-black rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] border-[12px] border-[#1a1a1a] ring-1 ring-white/5 transition-transform duration-500 hover:scale-[1.02] overflow-hidden">
                             {/* Inner Screen */}
                             <div className="relative w-full h-full rounded-[2.5rem] overflow-hidden bg-black flex items-center justify-center">
                                 {/* Simulation Camera Background */}
-                                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1511367461989-f85a21fda167?auto=format&fit=crop&q=80&w=1000')] bg-cover bg-center opacity-60"></div>
+                                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1511367461989-f85a21fda167?auto=format&fit=crop&q=80&w=1000')] bg-cover bg-center opacity-40"></div>
 
                                 {/* The Frame Overlay */}
                                 {config.frame_url && (
@@ -679,22 +694,22 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 {/* Camera Interface Mockup */}
                                 <div className="absolute inset-0 z-20 flex flex-col justify-between p-8 pointer-events-none">
                                     <div className="flex justify-between items-start pt-4">
-                                        <div className="w-8 h-8 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white">
+                                        <div className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white border border-white/10">
                                             <ChevronRight size={18} className="rotate-180" />
                                         </div>
-                                        <div className="px-3 py-1 bg-black/20 backdrop-blur-md rounded-full text-[8px] font-black text-white uppercase tracking-widest">
+                                        <div className="px-3 py-1 bg-black/40 backdrop-blur-md rounded-full text-[8px] font-black text-white uppercase tracking-widest border border-white/10">
                                             AR CAMERA
                                         </div>
                                     </div>
 
                                     <div className="flex flex-col items-center gap-6 pb-4">
                                         {config.instructions && (
-                                            <div className="bg-black/40 backdrop-blur-lg px-6 py-3 rounded-2xl text-white text-[9px] font-black uppercase tracking-widest text-center border border-white/10 max-w-[80%]">
+                                            <div className="bg-black/60 backdrop-blur-xl px-6 py-3 rounded-2xl text-white text-[9px] font-black uppercase tracking-widest text-center border border-white/20 max-w-[80%] shadow-2xl">
                                                 {config.instructions}
                                             </div>
                                         )}
-                                        <div className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center">
-                                            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm"></div>
+                                        <div className="w-16 h-16 rounded-full border-4 border-white/30 flex items-center justify-center">
+                                            <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -702,13 +717,13 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
 
                         {/* Stats Label */}
-                        <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                        <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 flex items-center gap-4 shadow-2xl">
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 flex-shrink-0 animate-pulse">
                                 <Maximize size={18} />
                             </div>
                             <div>
-                                <h5 className="text-[10px] font-black uppercase text-gray-900 tracking-tight">AR Layer Active</h5>
-                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">High-Precision Masking</p>
+                                <h5 className="text-[10px] font-black uppercase text-white tracking-tight">AR Layer Active</h5>
+                                <p className="text-[9px] text-white/60 font-bold uppercase tracking-widest mt-0.5">High-Precision Masking</p>
                             </div>
                         </div>
                     </div>
@@ -736,17 +751,17 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 {/* Left Column: Configuration */}
                 <div className="flex-1 space-y-8">
                     {/* Header & Tabs */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121212] p-6 rounded-3xl border border-white/5 shadow-2xl backdrop-blur-xl">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-pink-500 flex items-center justify-center text-white shadow-lg shadow-pink-200">
+                            <div className="w-12 h-12 rounded-2xl bg-pink-600 flex items-center justify-center text-white shadow-lg shadow-pink-900/20">
                                 <Sparkles size={24} />
                             </div>
                             <div>
-                                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter">Face Filter</h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Premium Configuration</p>
+                                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Face Filter</h3>
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Premium Configuration</p>
                             </div>
                         </div>
-                        <div className="flex bg-gray-100/80 p-1 rounded-2xl border border-gray-200/50">
+                        <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5 shadow-inner">
                             {[
                                 { id: 'content', icon: <Box size={14} />, label: 'Content' },
                                 { id: 'transform', icon: <Maximize size={14} />, label: 'Transform' },
@@ -755,7 +770,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeTab === tab.id ? 'bg-white text-pink-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-900 uppercase tracking-tighter'}`}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeTab === tab.id ? 'bg-[#1a1a1a] text-pink-500 shadow-xl border border-white/10' : 'text-white/60 hover:text-white uppercase tracking-tighter'}`}
                                 >
                                     {tab.icon} {tab.label}
                                 </button>
@@ -768,21 +783,21 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         {activeTab === 'content' && (
                             <div className="grid grid-cols-1 gap-6 animate-in slide-in-from-bottom-2 duration-300">
                                 {/* Filter Type & Assets */}
-                                <section className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm space-y-8">
-                                    <div className="flex items-center justify-between border-b border-gray-50 pb-6">
+                                <section className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl space-y-8">
+                                    <div className="flex items-center justify-between border-b border-white/5 pb-6">
                                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-pink-500 flex items-center gap-2">
                                             <Layers size={14} /> Asset Type & Content
                                         </h4>
-                                        <div className="flex bg-gray-50 p-1 rounded-xl">
+                                        <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
                                             <button
                                                 onClick={() => updateConfig('filter_type', '2d')}
-                                                className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${config.filter_type !== '3d' ? 'bg-white text-pink-600 shadow-sm border border-gray-200' : 'text-gray-400'}`}
+                                                className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${config.filter_type !== '3d' ? 'bg-[#1a1a1a] text-pink-500 shadow-xl border border-white/10' : 'text-white/40'}`}
                                             >
                                                 2D STICKER
                                             </button>
                                             <button
                                                 onClick={() => updateConfig('filter_type', '3d')}
-                                                className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${config.filter_type === '3d' ? 'bg-white text-pink-600 shadow-sm border border-gray-200' : 'text-gray-400'}`}
+                                                className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${config.filter_type === '3d' ? 'bg-[#1a1a1a] text-pink-500 shadow-xl border border-white/10' : 'text-white/40'}`}
                                             >
                                                 3D MODEL
                                             </button>
@@ -792,21 +807,21 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     {/* Upload Area */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Main Content</label>
-                                            <div className="relative aspect-square rounded-[2rem] border-2 border-dashed border-gray-200 bg-gray-50/30 flex flex-col items-center justify-center p-6 group hover:border-pink-400 hover:bg-pink-50/30 transition-all duration-500 cursor-pointer overflow-hidden">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Main Content</label>
+                                            <div className="relative aspect-square rounded-[2rem] border-2 border-dashed border-white/10 bg-black/40 flex flex-col items-center justify-center p-6 group hover:border-pink-500 hover:bg-pink-500/5 transition-all duration-500 cursor-pointer overflow-hidden shadow-inner">
                                                 {config.filter_url || config.filter_3d_url ? (
                                                     <div className="relative w-full h-full">
                                                         {config.filter_type === '3d' ? (
-                                                            <div className="w-full h-full flex items-center justify-center bg-white rounded-2xl shadow-inner">
+                                                            <div className="w-full h-full flex items-center justify-center bg-black/40 rounded-2xl shadow-inner border border-white/5">
                                                                 <Box size={48} className="text-pink-500" />
                                                             </div>
                                                         ) : (
                                                             <img src={config.filter_url} className="w-full h-full object-contain drop-shadow-2xl" />
                                                         )}
-                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm rounded-2xl">
+                                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm rounded-2xl">
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); updateConfig(config.filter_type === '3d' ? 'filter_3d_url' : 'filter_url', '') }}
-                                                                className="bg-red-500 text-white p-3 rounded-2xl hover:bg-red-600 transition shadow-xl"
+                                                                className="bg-red-500 text-white p-3 rounded-2xl hover:bg-red-600 transition shadow-2xl"
                                                             >
                                                                 <Trash2 size={20} />
                                                             </button>
@@ -814,52 +829,53 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                     </div>
                                                 ) : (
                                                     <div className="text-center space-y-4">
-                                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
-                                                            <Upload size={24} className="text-pink-500" />
+                                                        <div className="w-16 h-16 bg-[#1a1a1a] rounded-2xl shadow-xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform border border-white/5">
+                                                            {uploadingField === 'filters' ? <Loader2 size={24} className="text-pink-500 animate-spin" /> : <Upload size={24} className="text-pink-500" />}
                                                         </div>
                                                         <div>
-                                                            <p className="text-sm font-black text-gray-900">Upload {config.filter_type === '3d' ? '.GLB' : '.PNG'}</p>
-                                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Sử dụng định dạng file tối ưu</p>
+                                                            <p className="text-sm font-black text-white uppercase tracking-tighter">{uploadingField === 'filters' ? 'Uploading...' : `Upload ${config.filter_type === '3d' ? '.GLB' : '.PNG'}`}</p>
+                                                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Sử dụng định dạng file tối ưu</p>
                                                         </div>
                                                     </div>
                                                 )}
-                                                <input type="file" className="hidden" accept={config.filter_type === '3d' ? '.glb,.gltf' : '.png'} onChange={e => handleFileUpload(e, config.filter_type === '3d' ? 'filter_3d_url' : 'filter_url', 'filters')} />
-                                                {!config.filter_url && !config.filter_3d_url && <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept={config.filter_type === '3d' ? '.glb,.gltf' : '.png'} onChange={e => handleFileUpload(e, config.filter_type === '3d' ? 'filter_3d_url' : 'filter_url', 'filters')} />}
+                                                <input type="file" disabled={uploadingField === 'filters'} className="hidden" accept={config.filter_type === '3d' ? '.glb,.gltf' : '.png'} onChange={e => handleFileUpload(e, config.filter_type === '3d' ? 'filter_3d_url' : 'filter_url', 'filters')} />
+                                                {!config.filter_url && !config.filter_3d_url && <input type="file" disabled={uploadingField === 'filters'} className="absolute inset-0 opacity-0 cursor-pointer" accept={config.filter_type === '3d' ? '.glb,.gltf' : '.png'} onChange={e => handleFileUpload(e, config.filter_type === '3d' ? 'filter_3d_url' : 'filter_url', 'filters')} />}
                                             </div>
                                         </div>
 
                                         <div className="space-y-8">
                                             {/* Client Logo */}
                                             <div className="space-y-4">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Client Logo</label>
-                                                <div className="flex items-center gap-6 p-6 bg-gray-50/50 rounded-3xl border border-gray-100">
-                                                    <div className="relative w-16 h-16 rounded-2xl bg-white border border-gray-200 p-2 shadow-sm flex-shrink-0">
+                                                <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Client Logo</label>
+                                                <div className="flex items-center gap-6 p-6 bg-black/40 rounded-3xl border border-white/5 shadow-inner">
+                                                    <div className="relative w-16 h-16 rounded-2xl bg-black border border-white/10 p-2 shadow-xl flex-shrink-0 overflow-hidden">
                                                         {config.logo_url ? (
                                                             <>
                                                                 <img src={config.logo_url} className="w-full h-full object-contain" />
-                                                                <button onClick={() => updateConfig('logo_url', '')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-lg border-2 border-white shadow-lg"><Trash2 size={10} /></button>
+                                                                <button onClick={() => updateConfig('logo_url', '')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-lg border-2 border-black/50 shadow-lg active:scale-95 transition-transform"><Trash2 size={10} /></button>
                                                             </>
                                                         ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon size={20} /></div>
+                                                            <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={20} /></div>
                                                         )}
                                                     </div>
                                                     <div className="space-y-2">
-                                                        <label className="text-[10px] font-bold py-2 px-4 bg-white border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition shadow-sm inline-block">
+                                                        <label className={`text-[10px] font-black py-2.5 px-6 bg-[#1a1a1a] border border-white/10 text-white rounded-xl cursor-pointer hover:bg-pink-500/10 hover:border-pink-500/50 hover:text-pink-500 transition-all shadow-xl inline-flex items-center gap-2 uppercase tracking-widest ${uploadingField === 'logos' ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                            {uploadingField === 'logos' ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
                                                             CHANGE LOGO
-                                                            <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'logo_url', 'logos')} />
+                                                            <input type="file" disabled={uploadingField === 'logos'} className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'logo_url', 'logos')} />
                                                         </label>
-                                                        <p className="text-[9px] text-gray-400 font-medium">Kích thước gợi ý: 400x400px</p>
+                                                        <p className="text-[9px] text-white/40 font-bold uppercase tracking-widest">Kích thước gợi ý: 400x400px</p>
                                                     </div>
                                                 </div>
                                             </div>
 
                                             {/* Instructions */}
                                             <div className="space-y-4">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Hướng dẫn (Scan-hint)</label>
+                                                <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Hướng dẫn (Scan-hint)</label>
                                                 <input
                                                     value={config.instructions || ''}
                                                     onChange={e => updateConfig('instructions', e.target.value)}
-                                                    className="w-full bg-gray-50 border border-gray-100 p-4 rounded-2xl text-sm font-medium outline-none focus:border-pink-400 focus:bg-white transition-all shadow-inner"
+                                                    className="w-full bg-black/40 border border-white/10 p-5 rounded-2xl text-sm text-white font-medium outline-none focus:border-pink-500/50 transition-all shadow-inner placeholder:text-white/10"
                                                     placeholder="Hướng camera vào khuôn mặt..."
                                                 />
                                             </div>
@@ -872,22 +888,22 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         {activeTab === 'transform' && (
                             <div className="grid grid-cols-1 gap-6 animate-in slide-in-from-bottom-2 duration-300">
                                 {/* Anchor & Transform */}
-                                <section className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm space-y-8">
-                                    <div className="flex items-center gap-2 border-b border-gray-50 pb-6">
+                                <section className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl space-y-8">
+                                    <div className="flex items-center gap-2 border-b border-white/5 pb-6">
                                         <Maximize size={14} className="text-pink-500" />
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Anchor & Position</h4>
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Anchor & Position</h4>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                         {/* Anchor Point Selector */}
                                         <div className="space-y-6">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Anchor Point (Điểm neo)</label>
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Anchor Point (Điểm neo)</label>
                                             <div className="grid grid-cols-1 gap-2">
                                                 {ANCHOR_OPTIONS.map(opt => (
                                                     <button
                                                         key={opt.value}
                                                         onClick={() => updateConfig('anchor_position', opt.value)}
-                                                        className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${config.anchor_position === opt.value ? 'bg-pink-500/10 border-pink-500 text-pink-600' : 'bg-gray-50 border-transparent hover:border-gray-200 text-gray-600'}`}
+                                                        className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${config.anchor_position === opt.value ? 'bg-pink-500/10 border-pink-500 text-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.1)]' : 'bg-black/40 border-white/5 hover:border-white/10 text-white/60'}`}
                                                     >
                                                         <span className="text-xl">{opt.icon}</span>
                                                         <span className="text-xs font-black uppercase tracking-tight">{opt.label}</span>
@@ -901,40 +917,40 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         <div className="space-y-8">
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-end">
-                                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Kích thước (Scale)</span>
-                                                    <span className="text-xs font-black text-pink-600 px-2 py-0.5 bg-pink-50 rounded-md border border-pink-100">{(config.filter_scale ?? 0.5)}x</span>
+                                                    <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">Kích thước (Scale)</span>
+                                                    <span className="text-xs font-black text-pink-500 px-3 py-1 bg-pink-500/10 rounded-lg border border-pink-500/20 shadow-xl shadow-pink-500/5">{(config.filter_scale ?? 0.5)}x</span>
                                                 </div>
-                                                <input type="range" min="0.1" max="2" step="0.05" value={config.filter_scale ?? 0.5} onChange={(e) => updateConfig('filter_scale', parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-pink-500" />
+                                                <div className="relative h-6 flex items-center">
+                                                    <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.5)]" style={{ width: `${((config.filter_scale ?? 0.5) / 2) * 100}%` }} />
+                                                    </div>
+                                                    <input type="range" min="0.1" max="2" step="0.05" value={config.filter_scale ?? 0.5} onChange={(e) => updateConfig('filter_scale', parseFloat(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
+                                                </div>
                                             </div>
 
-                                            <div className="space-y-6 p-6 bg-gray-50/50 rounded-[2rem] border border-gray-100">
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-end">
-                                                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dịch ngang (X)</span>
-                                                        <span className="text-xs font-bold text-gray-500">{config.offset_x || 0}</span>
+                                            <div className="grid grid-cols-1 gap-6 p-8 bg-black/40 rounded-[2.5rem] border border-white/5 shadow-inner">
+                                                {[
+                                                    { label: 'Dịch ngang (X)', key: 'offset_x', min: -0.5, max: 0.5, color: '#3b82f6' },
+                                                    { label: 'Dịch dọc (Y)', key: 'offset_y', min: -0.5, max: 0.5, color: '#a855f7' },
+                                                    { label: 'Độ sâu (Z)', key: 'offset_z', min: -1, max: 1, color: '#22c55e' }
+                                                ].map(axis => (
+                                                    <div key={axis.key} className="space-y-4">
+                                                        <div className="flex justify-between items-end">
+                                                            <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">{axis.label}</span>
+                                                            <span className="text-[10px] font-black text-white px-2 py-0.5 bg-white/5 rounded-md border border-white/10">{config[axis.key] || 0}</span>
+                                                        </div>
+                                                        <div className="relative h-4 flex items-center">
+                                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full" />
+                                                            <input type="range" min={axis.min} max={axis.max} step="0.01" value={config[axis.key] || 0} onChange={(e) => updateConfig(axis.key, parseFloat(e.target.value))} className="relative w-full h-1 bg-transparent appearance-none cursor-pointer accent-white hover:accent-pink-500 transition-all" />
+                                                        </div>
                                                     </div>
-                                                    <input type="range" min="-0.5" max="0.5" step="0.01" value={config.offset_x || 0} onChange={(e) => updateConfig('offset_x', parseFloat(e.target.value))} className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:accent-pink-500" />
-                                                </div>
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-end">
-                                                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dịch dọc (Y)</span>
-                                                        <span className="text-xs font-bold text-gray-500">{config.offset_y || 0}</span>
-                                                    </div>
-                                                    <input type="range" min="-0.5" max="0.5" step="0.01" value={config.offset_y || 0} onChange={(e) => updateConfig('offset_y', parseFloat(e.target.value))} className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:accent-pink-500" />
-                                                </div>
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-end">
-                                                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Độ sâu (Z)</span>
-                                                        <span className="text-xs font-bold text-gray-500">{config.offset_z || 0}</span>
-                                                    </div>
-                                                    <input type="range" min="-1" max="1" step="0.01" value={config.offset_z || 0} onChange={(e) => updateConfig('offset_z', parseFloat(e.target.value))} className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:accent-pink-500" />
-                                                </div>
+                                                ))}
                                             </div>
 
                                             <div className="pt-4">
                                                 <button
                                                     onClick={() => setConfig({ ...config, filter_scale: 0.5, offset_x: 0, offset_y: 0, offset_z: 0 })}
-                                                    className="w-full py-4 bg-gray-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition shadow-xl"
+                                                    className="w-full py-4 bg-white/5 border border-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-white hover:text-black hover:scale-[1.02] active:scale-95 transition-all shadow-2xl"
                                                 >
                                                     Reset Transform
                                                 </button>
@@ -948,58 +964,58 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         {activeTab === 'settings' && (
                             <div className="grid grid-cols-1 gap-6 animate-in slide-in-from-bottom-2 duration-300">
                                 {/* Occlusion & Rendering */}
-                                <section className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm space-y-8">
-                                    <div className="flex items-center gap-2 border-b border-gray-50 pb-6">
+                                <section className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl space-y-8">
+                                    <div className="flex items-center gap-2 border-b border-white/5 pb-6">
                                         <Settings size={14} className="text-pink-500" />
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Occlusion & Rendering</h4>
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Occlusion & Rendering</h4>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                         <div className="space-y-6">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block flex items-center gap-1">
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block flex items-center gap-1">
                                                 <Eye size={12} className="text-blue-400" /> Head Occluder (Che phủ đầu)
                                             </label>
                                             <button
                                                 onClick={() => updateConfig('full_head_occlusion', !config.full_head_occlusion)}
-                                                className={`flex items-center justify-between w-full p-6 rounded-3xl border transition-all ${config.full_head_occlusion ? 'bg-pink-500/10 border-pink-500 text-pink-600 shadow-lg shadow-pink-100' : 'bg-gray-50 border-transparent text-gray-400'}`}
+                                                className={`flex items-center justify-between w-full p-6 rounded-3xl border transition-all ${config.full_head_occlusion ? 'bg-pink-500/10 border-pink-500 text-pink-500 shadow-xl shadow-pink-500/5' : 'bg-black/40 border-white/5 text-white/40'}`}
                                             >
                                                 <div className="text-left">
                                                     <span className="text-xs font-black uppercase tracking-tight block">Full Head Occluder</span>
                                                     <p className="text-[10px] opacity-70 mt-1 font-medium">Bật nếu filter có phần che khuất sau đầu (mũ, nón...)</p>
                                                 </div>
-                                                <div className={`w-10 h-6 rounded-full relative transition-colors ${config.full_head_occlusion ? 'bg-pink-500' : 'bg-gray-300'}`}>
-                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${config.full_head_occlusion ? 'left-5' : 'left-1'}`} />
+                                                <div className={`w-10 h-6 rounded-full relative transition-colors ${config.full_head_occlusion ? 'bg-pink-500' : 'bg-white/10'}`}>
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-xl ${config.full_head_occlusion ? 'left-5' : 'left-1'}`} />
                                                 </div>
                                             </button>
 
                                             {config.full_head_occlusion && (
-                                                <div className="space-y-6 p-6 bg-pink-50/50 rounded-3xl border border-pink-100 mt-4 animate-in zoom-in-95 duration-200">
+                                                <div className="space-y-6 p-8 bg-black/40 rounded-3xl border border-pink-500/10 mt-4 animate-in zoom-in-95 duration-200 shadow-inner">
                                                     <div className="space-y-4">
                                                         <div className="flex justify-between items-end">
-                                                            <span className="text-[10px] font-black text-pink-400 uppercase tracking-widest">Kích thước Occluder</span>
-                                                            <span className="text-xs font-bold text-pink-600">{config.occlusion_radius ?? 0.15}</span>
+                                                            <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">Kích thước Occluder</span>
+                                                            <span className="text-xs font-black text-white px-2 py-0.5 bg-white/5 rounded-md border border-white/10">{config.occlusion_radius ?? 0.15}</span>
                                                         </div>
-                                                        <input type="range" min="0.1" max="0.5" step="0.01" value={config.occlusion_radius ?? 0.15} onChange={(e) => updateConfig('occlusion_radius', parseFloat(e.target.value))} className="w-full h-1 bg-pink-200 rounded-lg appearance-none cursor-pointer accent-pink-500" />
+                                                        <input type="range" min="0.1" max="0.5" step="0.01" value={config.occlusion_radius ?? 0.15} onChange={(e) => updateConfig('occlusion_radius', parseFloat(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-pink-500" />
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
 
                                         <div className="space-y-6">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Capture Controls</label>
+                                            <label className="text-[10px] font-black text-white/50 uppercase tracking-widest block">Capture Controls</label>
                                             <div className="space-y-4">
-                                                <div className="p-6 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-4">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Nút Chụp (Button Style)</label>
-                                                    <div className="flex gap-4">
-                                                        <div className="flex-1 space-y-2">
+                                                <div className="p-8 bg-black/40 rounded-3xl border border-white/5 space-y-6 shadow-inner">
+                                                    <label className="text-[10px] font-black text-white/40 uppercase tracking-widest block">Nút Chụp (Button Style)</label>
+                                                    <div className="flex items-center gap-6">
+                                                        <div className="flex-1">
                                                             <input
                                                                 value={config.capture_btn_text || 'CHỤP ẢNH'}
                                                                 onChange={e => updateConfig('capture_btn_text', e.target.value)}
-                                                                className="w-full bg-white border border-gray-200 px-4 py-2.5 rounded-xl text-xs font-bold outline-none focus:border-pink-500 transition-all"
+                                                                className="w-full bg-[#1a1a1a] border border-white/10 px-6 py-4 rounded-2xl text-xs text-white font-black uppercase tracking-widest outline-none focus:border-pink-500/50 transition-all placeholder:text-white/5 shadow-xl"
                                                                 placeholder="CHỤP ẢNH"
                                                             />
                                                         </div>
-                                                        <label className="w-12 h-10 rounded-xl cursor-pointer border-2 border-white shadow-sm transition-transform active:scale-90 flex-shrink-0" style={{ backgroundColor: config.capture_btn_color || '#ec4899' }}>
+                                                        <label className="w-16 h-16 rounded-2xl cursor-pointer border-2 border-white/20 shadow-2xl transition-transform active:scale-95 flex-shrink-0 bg-pink-500 ring-4 ring-pink-500/10" style={{ backgroundColor: config.capture_btn_color || '#ec4899' }}>
                                                             <input type="color" className="hidden" value={config.capture_btn_color || '#ec4899'} onChange={e => updateConfig('capture_btn_color', e.target.value)} />
                                                         </label>
                                                     </div>
@@ -1018,15 +1034,15 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                     <div className="xl:sticky xl:top-8 space-y-6">
                         <div className="flex items-center justify-between mb-2 px-2">
                             <div className="space-y-1">
-                                <h3 className="font-black text-xl text-gray-900 uppercase tracking-tighter flex items-center gap-2">
+                                <h3 className="font-black text-xl text-white uppercase tracking-tighter flex items-center gap-2">
                                     Face Preview
                                 </h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em]">AR Face Tracking</p>
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.2em]">AR Face Tracking</p>
                             </div>
-                            <div className="flex bg-gray-100 p-1 rounded-xl">
+                            <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
                                 <button
                                     onClick={() => setDebugMode(!debugMode)}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${debugMode ? 'bg-pink-500 text-white shadow-lg shadow-pink-100' : 'text-gray-400 hover:text-gray-600 uppercase'}`}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${debugMode ? 'bg-[#1a1a1a] text-pink-500 shadow-xl border border-white/10' : 'text-white/40 hover:text-white uppercase'}`}
                                 >
                                     MESH: {debugMode ? 'ON' : 'OFF'}
                                 </button>
@@ -1034,11 +1050,11 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
 
                         {/* Phone Container Aspect 9:16 */}
-                        <div className="relative w-full aspect-[9/16] bg-[#0c0c0c] rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.3)] border-[12px] border-gray-900 ring-2 ring-gray-900/10 transition-transform duration-500 hover:scale-[1.02]">
+                        <div className="relative w-full aspect-[9/16] bg-black rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] border-[12px] border-[#1a1a1a] ring-1 ring-white/5 transition-transform duration-500 hover:scale-[1.02]">
                             {/* Camera Notch */}
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 h-8 w-40 bg-gray-900 rounded-b-3xl z-40 flex items-center justify-center gap-4">
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 h-8 w-40 bg-[#1a1a1a] rounded-b-3xl z-40 flex items-center justify-center gap-4">
                                 <div className="w-16 h-1 bg-white/10 rounded-full"></div>
-                                <div className="w-2 h-2 bg-blue-500/20 rounded-full"></div>
+                                <div className="w-2 h-2 bg-blue-500/40 rounded-full"></div>
                             </div>
 
                             <div className="relative w-full h-full rounded-[2.5rem] overflow-hidden bg-black flex items-center justify-center">
@@ -1052,21 +1068,21 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         />
                                     </Suspense>
                                 ) : (
-                                    <div className="text-center p-8 space-y-6">
+                                    <div className="text-center p-12 space-y-8">
                                         <div className="relative">
-                                            <div className="w-24 h-24 bg-gradient-to-tr from-pink-500 to-pink-400 rounded-3xl mx-auto flex items-center justify-center shadow-2xl shadow-pink-500/40 relative z-10">
-                                                <Camera size={40} className="text-white" />
+                                            <div className="w-28 h-28 bg-gradient-to-tr from-pink-600 to-pink-400 rounded-3xl mx-auto flex items-center justify-center shadow-2xl shadow-pink-500/40 relative z-10 border border-white/20 scale-110">
+                                                <Camera size={44} className="text-white" />
                                             </div>
-                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-pink-500/20 rounded-full blur-2xl animate-pulse"></div>
+                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-pink-500/20 rounded-full blur-3xl animate-pulse"></div>
                                         </div>
-                                        <div className="space-y-4 relative z-10">
+                                        <div className="space-y-6 relative z-10">
                                             <div>
-                                                <h4 className="text-white font-black uppercase tracking-tighter text-lg">Start Simulation</h4>
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1 leading-relaxed">Kết nối Camera để xem Filter<br />ngay trên gương mặt bạn</p>
+                                                <h4 className="text-white font-black uppercase tracking-tighter text-xl">Start Simulation</h4>
+                                                <p className="text-[10px] text-white/50 font-bold uppercase tracking-[0.2em] mt-2 leading-relaxed">Kết nối Camera để xem Filter<br />ngay trên gương mặt bạn</p>
                                             </div>
                                             <button
                                                 onClick={() => setShowPreview(true)}
-                                                className="bg-white text-gray-900 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-pink-50 transition active:scale-95 shadow-xl"
+                                                className="bg-white text-black px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-pink-500 hover:text-white transition-all active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
                                             >
                                                 Start Camera
                                             </button>
@@ -1077,13 +1093,13 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
 
                         {/* Status Label */}
-                        <div className="bg-white/50 backdrop-blur-md border border-white/50 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                            <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center text-white flex-shrink-0 animate-pulse">
+                        <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 flex items-center gap-4 shadow-2xl">
+                            <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center text-green-500 flex-shrink-0 animate-pulse">
                                 <Camera size={18} />
                             </div>
                             <div>
-                                <h5 className="text-[10px] font-black uppercase text-gray-900 tracking-tight">System Ready</h5>
-                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Real-time Soft Updates Active</p>
+                                <h5 className="text-[10px] font-black uppercase text-white tracking-tight">System Ready</h5>
+                                <p className="text-[9px] text-white/60 font-bold uppercase tracking-widest mt-0.5">Real-time Soft Updates Active</p>
                             </div>
                         </div>
                     </div>
@@ -1100,6 +1116,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         }
 
         const selectedAsset = config.assets?.find((a: ARAsset) => a.id === selectedAssetId)
+        const [timelineZoom, setTimelineZoom] = useState(100)
 
         const addAsset = (type: '3d' | 'video') => {
             const newAsset: ARAsset = {
@@ -1111,8 +1128,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 position: [0, 0, 0],
                 rotation: [0, 0, 0],
                 video_autoplay: true,
-                video_loop: true,
-                animation_mode: 'auto'
+                video_loop: true
             }
             const updatedAssets = [...(config.assets || []), newAsset]
             setConfig({ ...config, assets: updatedAssets })
@@ -1132,6 +1148,42 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
             setConfig({ ...config, assets: updatedAssets })
         }
 
+        // Pro Mixer: Drag Handlers
+        const updateKeyframe = (kfId: string, updates: Partial<VideoKeyframe>) => {
+            if (!selectedAssetId || !selectedAsset) return
+            const newKeyframes = (selectedAsset.keyframes || []).map(kf =>
+                kf.id === kfId ? { ...kf, ...updates } : kf
+            )
+            updateAsset(selectedAssetId, { keyframes: newKeyframes })
+        }
+
+        const deleteKeyframes = (ids: string[]) => {
+            if (!selectedAssetId || !selectedAsset) return
+            const newKeyframes = (selectedAsset.keyframes || []).filter(kf => !ids.includes(kf.id))
+            updateAsset(selectedAssetId, { keyframes: newKeyframes })
+            setSelectedKeyframeIds(prev => prev.filter(id => !ids.includes(id)))
+        }
+
+        const bulkUpdateEasing = (ids: string[], easing: string) => {
+            if (!selectedAssetId || !selectedAsset || !easing) return
+            const newKeyframes = (selectedAsset.keyframes || []).map(kf =>
+                ids.includes(kf.id) ? { ...kf, easing } : kf
+            )
+            updateAsset(selectedAssetId, { keyframes: newKeyframes })
+        }
+
+        const addKeyframeAtTime = (prop: string, time: number) => {
+            if (!selectedAssetId) return
+            const newKeyframe: VideoKeyframe = {
+                id: `kf-${Date.now()}`,
+                time,
+                property: prop as any,
+                value: prop === 'scale' ? "1 1 1" : (prop === 'opacity' ? "1" : "0 0 0"),
+                easing: 'linear'
+            };
+            updateAsset(selectedAssetId, { keyframes: [...(selectedAsset?.keyframes || []), newKeyframe] });
+        }
+
         const updateConfig = (key: string, value: any) => {
             setConfig({ ...config, [key]: value })
         }
@@ -1142,22 +1194,22 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 <div className="flex-1 space-y-8">
 
                     {/* 1. Asset Manager */}
-                    <section className="bg-white border border-gray-100 rounded-2xl shadow-sm">
-                        <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl">
+                        <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Layers size={18} className="text-orange-500" />
-                                <h3 className="font-bold text-gray-800">Quản lý Assets</h3>
+                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Quản lý Assets</h3>
                             </div>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => addAsset('3d')}
-                                    className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-white hover:text-black transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
                                 >
                                     <Plus size={14} /> 3D
                                 </button>
                                 <button
                                     onClick={() => addAsset('video')}
-                                    className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-white hover:text-black transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
                                 >
                                     <Plus size={14} /> Video
                                 </button>
@@ -1171,32 +1223,32 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         <div
                                             key={asset.id}
                                             onClick={() => setSelectedAssetId(asset.id)}
-                                            className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 ${selectedAssetId === asset.id
-                                                ? 'bg-orange-50 border border-orange-200 ring-4 ring-orange-50'
-                                                : 'hover:bg-gray-50 border border-transparent'
+                                            className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedAssetId === asset.id
+                                                ? 'bg-[#1a1a1a] border border-orange-500/50 shadow-[0_0_20px_rgba(249,115,22,0.1)]'
+                                                : 'hover:bg-white/5 border border-transparent'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-xl shadow-sm ${asset.type === '3d' ? 'bg-blue-500 text-white' : 'bg-purple-500 text-white'
-                                                    }`}>
+                                                <div className={`p-2.5 rounded-xl shadow-2xl transition-transform group-hover:scale-110 ${asset.type === '3d' ? 'bg-blue-600' : 'bg-purple-600'
+                                                    } text-white`}>
                                                     {asset.type === '3d' ? <Box size={16} /> : <Video size={16} />}
                                                 </div>
                                                 <div>
-                                                    <p className={`text-sm font-bold truncate max-w-[150px] ${selectedAssetId === asset.id ? 'text-orange-900' : 'text-gray-700'}`}>
+                                                    <p className={`text-sm font-black uppercase tracking-tighter truncate max-w-[150px] ${selectedAssetId === asset.id ? 'text-orange-500' : 'text-white/60 group-hover:text-white'}`}>
                                                         {asset.name}
                                                     </p>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-widest ${asset.type === '3d' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
-                                                            }`}>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <span className={`text-[8px] px-2 py-0.5 rounded-md font-black uppercase tracking-[0.2em] ${asset.type === '3d' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                                                            } border border-white/5`}>
                                                             {asset.type}
                                                         </span>
-                                                        {!asset.url && <span className="text-[9px] text-red-500 font-bold animate-pulse">CHƯA CÓ FILE</span>}
+                                                        {!asset.url && <span className="text-[8px] text-red-500 font-black tracking-widest animate-pulse">NO FILE</span>}
                                                     </div>
                                                 </div>
                                             </div>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }}
-                                                className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -1204,12 +1256,12 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     ))}
                                 </div>
                             ) : (
-                                <div className="p-12 text-center text-gray-300">
-                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-dashed border-gray-200">
+                                <div className="p-12 text-center text-white/40">
+                                    <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-dashed border-white/10">
                                         <Box size={24} className="opacity-20" />
                                     </div>
-                                    <p className="text-sm font-medium">Chưa có asset nào trên marker này.</p>
-                                    <p className="text-xs opacity-60">Nhấn nút bên trên để thêm 3D model hoặc Video.</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest">Chưa có asset nào</p>
+                                    <p className="text-[9px] font-medium mt-1">Nhấn nút bên trên để thêm</p>
                                 </div>
                             )}
                         </div>
@@ -1217,34 +1269,34 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
                     {/* 2. Selected Asset Configuration */}
                     {selectedAsset ? (
-                        <section className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-4 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between">
+                        <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 backdrop-blur-xl">
+                            <div className="p-4 border-b border-white/5 bg-black/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="p-1 px-2 border rounded-md text-[9px] font-black uppercase bg-white shadow-sm text-gray-500">
+                                    <div className="p-1.5 px-3 border border-white/10 rounded-lg text-[8px] font-black uppercase bg-[#1a1a1a] shadow-xl text-white/60 tracking-widest">
                                         ID: {selectedAsset.id.slice(-4)}
                                     </div>
                                     <input
                                         type="text"
                                         value={selectedAsset.name}
                                         onChange={(e) => updateAsset(selectedAsset.id, { name: e.target.value })}
-                                        className="bg-transparent font-bold text-gray-800 border-none p-0 focus:ring-0 w-48 text-lg"
+                                        className="bg-transparent font-black text-white border-none p-0 focus:ring-0 w-48 text-lg uppercase tracking-tighter"
                                     />
                                 </div>
-                                <nav className="flex bg-gray-100/50 p-1 rounded-xl">
+                                <nav className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
                                     {[
-                                        { id: 'transform', label: 'Vị trí', icon: Maximize },
-                                        { id: 'content', label: 'File', icon: Upload },
-                                        { id: 'animation', label: 'Hoạt ảnh', icon: Play }
+                                        { id: 'transform', label: 'Transform', icon: Maximize },
+                                        { id: 'content', label: 'Asset', icon: Upload },
+                                        { id: 'animation', label: 'Timeline', icon: Play }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
                                             onClick={() => setActiveTab(tab.id as any)}
-                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === tab.id
-                                                ? 'bg-white shadow-sm text-orange-600 scale-105'
-                                                : 'text-gray-400 hover:text-gray-600'
+                                            className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all flex items-center gap-2 uppercase tracking-widest ${activeTab === tab.id
+                                                ? 'bg-orange-500 text-white shadow-xl scale-105'
+                                                : 'text-white/60 hover:text-white'
                                                 }`}
                                         >
-                                            <tab.icon size={14} /> {tab.label}
+                                            <tab.icon size={12} /> {tab.label}
                                         </button>
                                     ))}
                                 </nav>
@@ -1253,65 +1305,76 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                             <div className="p-8">
                                 {/* TAB: Transform */}
                                 {activeTab === 'transform' && (
-                                    <div className="space-y-8">
+                                    <div className="space-y-10">
                                         {/* Scale Slider */}
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                                                    Kích thước tổng thể
+                                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
+                                                    Kích thước (Scale)
                                                 </label>
-                                                <span className="text-xs font-black bg-orange-100 px-3 py-1 rounded-full text-orange-600 shadow-sm border border-orange-200">
+                                                <span className="text-xs font-black bg-orange-500/10 px-4 py-1 rounded-full text-orange-500 shadow-xl border border-orange-500/20">
                                                     {selectedAsset.scale.toFixed(2)}x
                                                 </span>
                                             </div>
-                                            <input
-                                                type="range" min="0.01" max="5" step="0.01"
-                                                value={selectedAsset.scale}
-                                                onChange={(e) => updateAsset(selectedAsset.id, { scale: parseFloat(e.target.value) })}
-                                                className="w-full h-2 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-orange-500"
-                                            />
+                                            <div className="relative h-6 flex items-center">
+                                                <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${(selectedAsset.scale / 5) * 100}%` }} />
+                                                </div>
+                                                <input
+                                                    type="range" min="0.01" max="5" step="0.01"
+                                                    value={selectedAsset.scale}
+                                                    onChange={(e) => updateAsset(selectedAsset.id, { scale: parseFloat(e.target.value) })}
+                                                    className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10"
+                                                />
+                                            </div>
                                         </div>
 
                                         {/* Position Sliders */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            {['X', 'Y', 'Z'].map((axis, i) => (
-                                                <div key={axis} className="space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                            {['X-Axis', 'Y-Axis', 'Z-Axis'].map((axis, i) => (
+                                                <div key={axis} className="space-y-4">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">{axis} position</label>
-                                                        <span className="font-mono text-[10px] font-bold text-gray-900 bg-gray-50 px-1.5 py-0.5 rounded border">{selectedAsset.position[i].toFixed(2)}</span>
+                                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-white/40">{axis}</label>
+                                                        <span className="font-black text-[10px] text-white bg-white/5 px-2 py-0.5 rounded border border-white/10">{selectedAsset.position[i].toFixed(2)}</span>
                                                     </div>
-                                                    <input
-                                                        type="range" min="-3" max="3" step="0.01"
-                                                        value={selectedAsset.position[i]}
-                                                        onChange={(e) => {
-                                                            const newPos = [...selectedAsset.position] as [number, number, number]
-                                                            newPos[i] = parseFloat(e.target.value)
-                                                            updateAsset(selectedAsset.id, { position: newPos })
-                                                        }}
-                                                        className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                                    />
+                                                    <div className="relative h-4 flex items-center">
+                                                        <div className="absolute inset-0 h-1 bg-white/5 rounded-full" />
+                                                        <input
+                                                            type="range" min="-3" max="3" step="0.01"
+                                                            value={selectedAsset.position[i]}
+                                                            onChange={(e) => {
+                                                                const newPos = [...selectedAsset.position] as [number, number, number]
+                                                                newPos[i] = parseFloat(e.target.value)
+                                                                updateAsset(selectedAsset.id, { position: newPos })
+                                                            }}
+                                                            className="relative w-full h-1 bg-transparent appearance-none cursor-pointer accent-blue-500 hover:accent-orange-500 transition-all"
+                                                        />
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
 
                                         {/* Rotation Sliders */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-50">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/5">
                                             {['Pitch', 'Yaw', 'Roll'].map((axis, i) => (
-                                                <div key={axis} className="space-y-3">
+                                                <div key={axis} className="space-y-4">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">{axis}</label>
-                                                        <span className="font-mono text-[10px] font-bold text-gray-900 bg-gray-50 px-1.5 py-0.5 rounded border">{selectedAsset.rotation[i]}°</span>
+                                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-white/40">{axis}</label>
+                                                        <span className="font-black text-[10px] text-white bg-white/5 px-2 py-0.5 rounded border border-white/10">{selectedAsset.rotation[i]}°</span>
                                                     </div>
-                                                    <input
-                                                        type="range" min="-180" max="180" step="1"
-                                                        value={selectedAsset.rotation[i]}
-                                                        onChange={(e) => {
-                                                            const newRot = [...selectedAsset.rotation] as [number, number, number]
-                                                            newRot[i] = parseInt(e.target.value)
-                                                            updateAsset(selectedAsset.id, { rotation: newRot })
-                                                        }}
-                                                        className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                                                    />
+                                                    <div className="relative h-4 flex items-center">
+                                                        <div className="absolute inset-0 h-1 bg-white/5 rounded-full" />
+                                                        <input
+                                                            type="range" min="-180" max="180" step="1"
+                                                            value={selectedAsset.rotation[i]}
+                                                            onChange={(e) => {
+                                                                const newRot = [...selectedAsset.rotation] as [number, number, number]
+                                                                newRot[i] = parseInt(e.target.value)
+                                                                updateAsset(selectedAsset.id, { rotation: newRot })
+                                                            }}
+                                                            className="relative w-full h-1 bg-transparent appearance-none cursor-pointer accent-purple-500 hover:accent-orange-500 transition-all"
+                                                        />
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -1322,61 +1385,106 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 {activeTab === 'content' && (
                                     <div className="space-y-8 animate-in fade-in duration-300">
                                         {/* File Upload / Link */}
-                                        <div className="bg-orange-50/30 p-6 rounded-2xl border border-orange-100/50 space-y-4">
+                                        <div className="bg-black/40 p-8 rounded-3xl border border-white/5 space-y-6 shadow-inner">
                                             <div className="flex items-center justify-between">
-                                                <label className="text-xs font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
                                                     Nguồn {selectedAsset.type === '3d' ? '3D Model (.glb)' : 'Video (.mp4/.webm)'}
                                                 </label>
-                                                {selectedAsset.url && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1"><Check size={10} /> ĐÃ UPLOAD</span>}
+                                                {selectedAsset.url && <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 flex items-center gap-1 uppercase tracking-widest"><Check size={10} /> ĐÃ UPLOAD</span>}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-3">
                                                 <input
                                                     type="text"
                                                     placeholder="Dán URL file ở đây hoặc nhấn nút Upload..."
                                                     value={selectedAsset.url}
                                                     onChange={(e) => updateAsset(selectedAsset.id, { url: e.target.value })}
-                                                    className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all shadow-sm"
+                                                    className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all shadow-xl placeholder:text-white/5"
                                                 />
-                                                <label className="bg-orange-600 text-white p-3 rounded-xl cursor-pointer hover:bg-orange-700 active:scale-95 transition-all shadow-md shadow-orange-200">
-                                                    <Upload size={20} />
+                                                <label className={`bg-orange-600 text-white p-4 rounded-2xl cursor-pointer hover:bg-orange-500 active:scale-95 transition-all shadow-2xl shadow-orange-900/40 border border-white/10 ${uploadingField === 'content' ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                    {uploadingField === 'content' ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
                                                     <input
                                                         type="file"
+                                                        disabled={uploadingField === 'content'}
                                                         className="hidden"
-                                                        accept={selectedAsset.type === '3d' ? '.glb' : '.mp4,.webm'}
-                                                        onChange={(e) => handleFileUpload(e, 'temp_url', 'content').then(url => {
-                                                            if (url) updateAsset(selectedAsset.id, { url })
-                                                        })}
+                                                        accept={selectedAsset.type === '3d' ? '.glb' : '.mp4,.webm,.webp'}
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files?.[0]
+                                                            const url = await handleFileUpload(e, 'temp_url', 'content')
+                                                            if (url && file) {
+                                                                // Use filename if asset name is default
+                                                                const currentAssetName = selectedAsset.name
+                                                                const isDefaultName = currentAssetName === 'New 3D Model' || currentAssetName === 'New Video'
+                                                                const newName = isDefaultName ? file.name : currentAssetName
+
+                                                                // Auto-detect video dimensions
+                                                                if (selectedAsset.type === 'video') {
+                                                                    const videoEl = document.createElement('video')
+                                                                    videoEl.src = URL.createObjectURL(file)
+                                                                    videoEl.onloadedmetadata = () => {
+                                                                        const aspectRatio = videoEl.videoWidth / videoEl.videoHeight
+                                                                        updateAsset(selectedAsset.id, {
+                                                                            url,
+                                                                            name: newName,
+                                                                            video_width: parseFloat(aspectRatio.toFixed(2)),
+                                                                            video_height: 1
+                                                                        })
+                                                                        URL.revokeObjectURL(videoEl.src)
+                                                                    }
+                                                                } else {
+                                                                    updateAsset(selectedAsset.id, { url, name: newName })
+                                                                }
+                                                            }
+                                                        }}
                                                     />
                                                 </label>
                                             </div>
-                                            <p className="text-[10px] text-gray-400 italic">💡 Bạn có thể dùng URL từ Dropbox, Google Drive (direct link) hoặc upload trực tiếp lên server.</p>
+
+
+                                            {/* Preview Player for Video */}
+                                            {selectedAsset.type === 'video' && selectedAsset.url && (
+                                                <div className="mt-6 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black ring-1 ring-white/5">
+                                                    <div className="bg-[#1a1a1a] px-5 py-3 border-b border-white/5 flex justify-between items-center text-white/60">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Video Preview</span>
+                                                        <Video size={14} />
+                                                    </div>
+                                                    <video
+                                                        src={selectedAsset.url}
+                                                        controls
+                                                        className="w-full max-h-[300px] object-contain"
+                                                        crossOrigin="anonymous"
+                                                        playsInline
+                                                    >
+                                                        Your browser does not support the video tag.
+                                                    </video>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Video Specific Settings */}
                                         {selectedAsset.type === 'video' && (
-                                            <div className="grid grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tỷ lệ Rộng (AR plane)</label>
-                                                    <input type="number" step="0.1" value={selectedAsset.video_width || 1} onChange={(e) => updateAsset(selectedAsset.id, { video_width: parseFloat(e.target.value) })} className="w-full border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-orange-500 focus:border-orange-500" />
+                                            <div className="grid grid-cols-2 gap-8 bg-black/40 p-8 rounded-3xl border border-white/5 shadow-inner">
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Tỷ lệ Rộng (AR plane)</label>
+                                                    <input type="number" step="0.1" value={selectedAsset.video_width || 1} onChange={(e) => updateAsset(selectedAsset.id, { video_width: parseFloat(e.target.value) })} className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:border-orange-500/50 outline-none transition-all" />
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tỷ lệ Cao (AR plane)</label>
-                                                    <input type="number" step="0.1" value={selectedAsset.video_height || 0.56} onChange={(e) => updateAsset(selectedAsset.id, { video_height: parseFloat(e.target.value) })} className="w-full border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-orange-500 focus:border-orange-500" />
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Tỷ lệ Cao (AR plane)</label>
+                                                    <input type="number" step="0.1" value={selectedAsset.video_height || 0.56} onChange={(e) => updateAsset(selectedAsset.id, { video_height: parseFloat(e.target.value) })} className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:border-orange-500/50 outline-none transition-all" />
                                                 </div>
-                                                <div className="col-span-2 flex flex-wrap gap-4 pt-2">
+                                                <div className="col-span-2 flex flex-wrap gap-4 pt-4">
                                                     <button
                                                         onClick={() => updateAsset(selectedAsset.id, { video_loop: !selectedAsset.video_loop })}
-                                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${selectedAsset.video_loop ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'
+                                                        className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all shadow-xl ${selectedAsset.video_loop ? 'bg-orange-500 text-white border-orange-500' : 'bg-[#1a1a1a] text-white/60 border-white/10 hover:border-orange-500/50 hover:text-white'
                                                             }`}
                                                     >
                                                         <RefreshCw size={14} className={selectedAsset.video_loop ? 'animate-spin-slow' : ''} /> Lặp lại video
                                                     </button>
                                                     <button
                                                         onClick={() => updateAsset(selectedAsset.id, { video_muted: !selectedAsset.video_muted })}
-                                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${selectedAsset.video_muted ? 'bg-gray-800 text-white border-gray-800 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-800'
+                                                        className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all shadow-xl ${selectedAsset.video_muted ? 'bg-white/10 text-white border-white/20' : 'bg-[#1a1a1a] text-white/60 border-white/10 hover:border-white'
                                                             }`}
                                                     >
-                                                        {selectedAsset.video_muted ? <Activity size={14} /> : <Activity size={14} />} {selectedAsset.video_muted ? 'Đã tắt tiếng' : 'Có tiếng'}
+                                                        <Activity size={14} /> {selectedAsset.video_muted ? 'Đã tắt tiếng' : 'Có tiếng'}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1384,183 +1492,219 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     </div>
                                 )}
 
-                                {/* TAB: Animation */}
+                                {/* TAB: Animation Specific */}
                                 {activeTab === 'animation' && (
-                                    <div className="space-y-10 animate-in fade-in duration-300">
-                                        {selectedAsset.type === '3d' ? (
-                                            <>
-                                                <div className="space-y-4">
-                                                    <label className="text-xs font-black uppercase tracking-widest text-gray-400">Chế độ hoạt ảnh cơ bản</label>
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                        {[
-                                                            { id: 'auto', label: 'Tự động xoay', icon: RefreshCw, color: 'text-blue-500 bg-blue-50 border-blue-100' },
-                                                            { id: 'loop_clips', label: 'Vòng lặp Clips', icon: Play, color: 'text-purple-500 bg-purple-50 border-purple-100' },
-                                                            { id: 'tap_to_play', label: 'Chạm để lặp', icon: Activity, color: 'text-green-500 bg-green-50 border-green-100' },
-                                                        ].map(mode => (
-                                                            <button
-                                                                key={mode.id}
-                                                                onClick={() => updateAsset(selectedAsset.id, { animation_mode: mode.id as any })}
-                                                                className={`relative flex flex-col items-center gap-3 p-5 rounded-2xl border-2 transition-all group ${selectedAsset.animation_mode === mode.id
-                                                                    ? `${mode.color} scale-105 shadow-lg border-current`
-                                                                    : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300 grayscale opacity-70 hover:grayscale-0 hover:opacity-100'
-                                                                    }`}
-                                                            >
-                                                                <mode.icon size={24} />
-                                                                <span className="text-[11px] font-black uppercase tracking-tighter">{mode.label}</span>
-                                                                {selectedAsset.animation_mode === mode.id && <div className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-current"><Check size={10} className="text-white" /></div>}
-                                                            </button>
-                                                        ))}
-                                                    </div>
+                                    <div className="space-y-12 animate-in fade-in duration-500">
+                                        {/* Unified Pro Mixer Timeline */}
+                                        <div className="bg-black/60 rounded-[2.5rem] border border-white/5 shadow-2xl overflow-hidden group/timeline ring-1 ring-white/5">
+                                            <div className="p-4 border-b border-white/5 bg-gradient-to-r from-orange-500/5 to-transparent flex items-center justify-between">
+                                                {/* Zoom Controls */}
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setTimelineZoom(z => Math.max(10, z - 10))}
+                                                        className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all border border-white/5"
+                                                        title="Zoom Out"
+                                                    >
+                                                        <Minus size={14} />
+                                                    </button>
+                                                    <span className="text-[10px] font-black text-white/40 w-12 text-center uppercase tracking-widest">{timelineZoom}%</span>
+                                                    <button
+                                                        onClick={() => setTimelineZoom(z => Math.min(200, z + 10))}
+                                                        className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all border border-white/5"
+                                                        title="Zoom In"
+                                                    >
+                                                        <Plus size={14} />
+                                                    </button>
                                                 </div>
 
-                                                {/* Sequential Steps (Keyframes) */}
-                                                <div className="pt-8 border-t border-gray-100 space-y-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-1">
-                                                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight">Sequential Steps (Keyframes)</h4>
-                                                            <p className="text-[10px] text-gray-400 font-medium">Chuỗi chuyển động tuần tự khi phát hiện marker.</p>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => {
-                                                                const newStep: AnimationStep = { id: `step-${Date.now()}`, property: 'position', to: '0 1 0', duration: 1000, easing: 'easeInOutQuad' }
-                                                                updateAsset(selectedAsset.id, { steps: [...(selectedAsset.steps || []), newStep] })
-                                                            }}
-                                                            className="flex items-center gap-1.5 bg-orange-500 text-white px-3 py-1.5 rounded-lg text-xs font-black shadow-sm shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all"
-                                                        >
-                                                            <Plus size={14} /> THÊM BƯỚC
-                                                        </button>
+                                                {/* Duration Control */}
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
+                                                        <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">Duration</span>
+                                                        <input
+                                                            type="number"
+                                                            step="0.1"
+                                                            min="1"
+                                                            value={selectedAsset.animation_duration || 5}
+                                                            onChange={(e) => updateAsset(selectedAsset.id, { animation_duration: parseFloat(e.target.value) })}
+                                                            className="w-10 bg-transparent text-white font-black text-center text-xs outline-none"
+                                                        />
+                                                        <span className="text-[9px] font-black text-white/30 uppercase">s</span>
                                                     </div>
+                                                </div>
+                                            </div>
 
-                                                    {selectedAsset.steps?.length > 0 ? (
-                                                        <div className="space-y-4">
-                                                            {selectedAsset.steps.map((step: AnimationStep, idx: number) => (
-                                                                <div key={step.id} className="relative bg-white border border-gray-100 rounded-2xl p-5 group shadow-sm hover:shadow-md transition-all border-l-8 border-l-orange-500">
-                                                                    <div className="absolute -left-3.5 top-1/2 -translate-y-1/2 w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
-                                                                        {idx + 1}
-                                                                    </div>
+                                            <ProMixerTimeline
+                                                keyframes={selectedAsset.keyframes || []}
+                                                duration={selectedAsset.animation_duration || 5}
+                                                onKeyframeUpdate={(id, updates) => updateKeyframe(id, updates)}
+                                                onKeyframeSelect={setSelectedKeyframeIds}
+                                                onAddKeyframe={(prop, time) => addKeyframeAtTime(prop, time)}
+                                                selectedIds={selectedKeyframeIds}
+                                                zoom={timelineZoom}
+                                            />
+                                        </div>
 
-                                                                    <div className="flex flex-wrap gap-4 mb-4 items-end pl-2">
-                                                                        <div className="space-y-1">
-                                                                            <label className="text-[9px] font-black text-gray-400 uppercase">Thuộc tính</label>
-                                                                            <select
-                                                                                value={step.property}
-                                                                                onChange={(e) => {
-                                                                                    const newSteps = [...selectedAsset.steps!]
-                                                                                    newSteps[idx].property = e.target.value as any
-                                                                                    updateAsset(selectedAsset.id, { steps: newSteps })
-                                                                                }}
-                                                                                className="bg-gray-50 border-none rounded-lg p-2 text-xs font-bold outline-none ring-1 ring-gray-200"
-                                                                            >
-                                                                                <option value="position">Vị trí</option>
-                                                                                <option value="rotation">Xoay</option>
-                                                                                <option value="scale">Kích thước</option>
-                                                                            </select>
-                                                                        </div>
-                                                                        <div className="flex-1 space-y-1">
-                                                                            <label className="text-[9px] font-black text-gray-400 uppercase">Giá trị đích (X Y Z)</label>
-                                                                            <input
-                                                                                type="text" value={step.to}
-                                                                                onChange={(e) => {
-                                                                                    const newSteps = [...selectedAsset.steps!]
-                                                                                    newSteps[idx].to = e.target.value
-                                                                                    updateAsset(selectedAsset.id, { steps: newSteps })
-                                                                                }}
-                                                                                placeholder="Ví dụ: 0 2 0 hoặc 1.5" className="w-full bg-gray-50 border-none rounded-lg p-2 text-xs font-bold outline-none ring-1 ring-gray-200"
-                                                                            />
-                                                                        </div>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newSteps = selectedAsset.steps!.filter((_, i) => i !== idx)
-                                                                                updateAsset(selectedAsset.id, { steps: newSteps })
-                                                                            }}
-                                                                            className="mb-1 p-2 text-gray-300 hover:text-red-500 transition-colors"
-                                                                        >
-                                                                            <Trash2 size={16} />
-                                                                        </button>
-                                                                    </div>
-                                                                    <div className="grid grid-cols-2 gap-4 pl-2">
-                                                                        <div className="space-y-1.5">
-                                                                            <div className="flex justify-between items-center">
-                                                                                <label className="text-[9px] font-black text-gray-400 uppercase">Thời lượng (Duration)</label>
-                                                                                <span className="text-[10px] font-bold text-orange-600">{step.duration}ms</span>
-                                                                            </div>
-                                                                            <input type="range" min="100" max="10000" step="100" value={step.duration} onChange={(e) => {
-                                                                                const newSteps = [...selectedAsset.steps!]
-                                                                                newSteps[idx].duration = parseInt(e.target.value)
-                                                                                updateAsset(selectedAsset.id, { steps: newSteps })
-                                                                            }} className="w-full h-1 bg-gray-100 rounded-lg accent-orange-500" />
-                                                                        </div>
-                                                                        <div className="space-y-1">
-                                                                            <label className="text-[9px] font-black text-gray-400 uppercase">Loại Easing</label>
-                                                                            <select
-                                                                                value={step.easing}
-                                                                                onChange={(e) => {
-                                                                                    const newSteps = [...selectedAsset.steps!]
-                                                                                    newSteps[idx].easing = e.target.value
-                                                                                    updateAsset(selectedAsset.id, { steps: newSteps })
-                                                                                }}
-                                                                                className="w-full bg-gray-50 border-none rounded-lg p-1.5 text-[10px] font-bold outline-none ring-1 ring-gray-200"
-                                                                            >
-                                                                                <option value="linear">Linear (Đều)</option>
-                                                                                <option value="easeInOutQuad">Ease In Out (Mềm)</option>
-                                                                                <option value="easeInBack">Ease In Back (Nhún)</option>
-                                                                                <option value="easeOutElastic">Elastic (Đàn hồi)</option>
-                                                                            </select>
-                                                                        </div>
+                                        {/* Dynamic Keyframe Inspector (Selection Based) */}
+                                        <div className="space-y-6">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400/80 flex items-center gap-2">
+                                                    <Maximize size={14} /> Keyframe Inspector
+                                                </h4>
+                                                {selectedKeyframeIds.length > 0 && (
+                                                    <button
+                                                        onClick={() => deleteKeyframes(selectedKeyframeIds)}
+                                                        className="text-[10px] font-black text-red-400/60 uppercase tracking-widest hover:text-red-400 transition-all flex items-center gap-1"
+                                                    >
+                                                        <Trash2 size={12} /> Delete Selected ({selectedKeyframeIds.length})
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {selectedKeyframeIds.length > 0 ? (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {selectedKeyframeIds.map(id => {
+                                                        const kf = selectedAsset.keyframes?.find(k => k.id === id)
+                                                        if (!kf) return null
+                                                        return (
+                                                            <div key={id} className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-4 hover:border-orange-500/30 transition-all group">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${kf.property === 'position' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                                                                        kf.property === 'rotation' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
+                                                                            kf.property === 'scale' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                                                                'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                                                                        }`}>
+                                                                        {kf.property}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Clock size={12} className="text-white/20" />
+                                                                        <span className="text-xs font-black text-white/60">{kf.time.toFixed(1)}s</span>
                                                                     </div>
                                                                 </div>
-                                                            ))}
 
-                                                            <div className="pt-2">
-                                                                <label className="flex items-center gap-3 cursor-pointer group bg-gray-50 p-4 rounded-2xl border border-gray-100/50">
-                                                                    <div className={`w-10 h-5 rounded-full relative transition-all ${selectedAsset.loop_animation ? 'bg-orange-600 shadow-inner' : 'bg-gray-300'}`}>
-                                                                        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${selectedAsset.loop_animation ? 'translate-x-5 scale-110 shadow-md' : ''}`} />
-                                                                    </div>
-                                                                    <input type="checkbox" checked={selectedAsset.loop_animation} onChange={(e) => updateAsset(selectedAsset.id, { loop_animation: e.target.checked })} className="hidden" />
-                                                                    <div>
-                                                                        <span className="text-xs font-black text-gray-700 uppercase tracking-tighter">Lặp lại chuỗi hoạt ảnh</span>
-                                                                        <p className="text-[9px] text-gray-400">Tự động quay lại Bước 1 sau khi kết thúc Bước cuối.</p>
-                                                                    </div>
-                                                                </label>
+                                                                <div className="space-y-3">
+                                                                    <label className="text-[9px] font-black text-white/30 uppercase tracking-widest">Target Value</label>
+                                                                    {(kf.property === 'position' || kf.property === 'rotation' || kf.property === 'scale') ? (
+                                                                        <div className="grid grid-cols-3 gap-2">
+                                                                            {['X', 'Y', 'Z'].map((axis, idx) => {
+                                                                                const values = kf.value.split(' ')
+                                                                                return (
+                                                                                    <div key={axis} className="space-y-1">
+                                                                                        <span className="text-[8px] text-white/20 font-bold uppercase">{axis}</span>
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            step="0.1"
+                                                                                            value={values[idx] || '0'}
+                                                                                            onChange={(e) => {
+                                                                                                const newValues = [...values]
+                                                                                                newValues[idx] = e.target.value
+                                                                                                updateKeyframe(kf.id, { value: newValues.join(' ') })
+                                                                                            }}
+                                                                                            className="w-full bg-black/40 border border-white/5 rounded-lg px-2 py-2 text-xs text-white text-center font-mono focus:border-orange-500 outline-none transition-all"
+                                                                                        />
+                                                                                    </div>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <input
+                                                                            type="number"
+                                                                            step="0.1"
+                                                                            min="0"
+                                                                            max="1"
+                                                                            value={kf.value}
+                                                                            onChange={(e) => updateKeyframe(kf.id, { value: e.target.value })}
+                                                                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-xs text-white text-center font-mono focus:border-orange-500 outline-none transition-all shadow-inner"
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <label className="text-[9px] font-black text-white/30 uppercase tracking-widest">Easing</label>
+                                                                    <select
+                                                                        value={kf.easing}
+                                                                        onChange={(e) => updateKeyframe(kf.id, { easing: e.target.value })}
+                                                                        className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-orange-500 transition-all"
+                                                                    >
+                                                                        {['linear', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic'].map(e => (
+                                                                            <option key={e} value={e} className="bg-[#121212]">{e}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex flex-col items-center justify-center p-12 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200 text-gray-400 space-y-3 grayscale opacity-60">
-                                                            <SkipForward size={32} />
-                                                            <p className="text-xs font-bold italic tracking-tight uppercase">Bắt đầu tạo chuyển động tuần tự của bạn</p>
+                                                        )
+                                                    })}
+
+                                                    {/* Bulk Edit Option (if multiple selected) */}
+                                                    {selectedKeyframeIds.length > 1 && (
+                                                        <div className="col-span-full bg-orange-500/10 border border-orange-500/20 rounded-3xl p-6 flex items-center justify-between">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
+                                                                    <Layers size={20} className="text-white" />
+                                                                </div>
+                                                                <div>
+                                                                    <h5 className="font-black text-sm text-white uppercase tracking-tight">Bulk Edit Easing</h5>
+                                                                    <p className="text-[10px] text-orange-200/60 font-medium">Apply same easing to {selectedKeyframeIds.length} keyframes</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                {['linear', 'easeInOutQuad', 'easeInOutCubic'].map(e => (
+                                                                    <button
+                                                                        key={e}
+                                                                        onClick={() => bulkUpdateEasing(selectedKeyframeIds, e)}
+                                                                        className="px-4 py-2 bg-black/40 hover:bg-orange-500 text-[10px] text-white font-black uppercase tracking-widest rounded-xl border border-white/5 transition-all shadow-xl"
+                                                                    >
+                                                                        {e}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
-                                            </>
-                                        ) : (
-                                            <div className="flex flex-col items-center justify-center p-16 text-gray-400 space-y-4">
-                                                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center border-2 border-dashed border-gray-100">
-                                                    <Video size={40} className="opacity-20 translate-x-1" />
+                                            ) : (
+                                                <div className="bg-white/5 border-2 border-dashed border-white/5 rounded-[2.5rem] p-16 text-center space-y-4 group/hint hover:border-white/10 transition-all">
+                                                    <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto group-hover/hint:scale-110 transition-transform duration-500 border border-white/5">
+                                                        <Activity size={24} className="text-white/20" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <p className="text-xs font-black text-white/40 uppercase tracking-widest">No Keyframes Selected</p>
+                                                        <p className="text-[10px] text-white/20 font-medium">Click on a diamond in the timeline to view and edit its detailed properties.</p>
+                                                    </div>
                                                 </div>
-                                                <div className="text-center">
-                                                    <p className="text-sm font-black text-gray-500 uppercase tracking-widest">Video Content</p>
-                                                    <p className="text-xs italic opacity-60 max-w-[200px]">Video asset không hỗ trợ các chế độ hoạt ảnh nâng cao của 3D model.</p>
+                                            )}
+                                        </div>
+
+                                        {/* 4. Loop Toggle */}
+                                        <div className="pt-6 border-t border-white/5">
+                                            <label className="flex items-center gap-4 cursor-pointer group bg-orange-500/5 p-8 rounded-[2rem] border border-orange-500/10 hover:bg-orange-500/10 transition-all">
+                                                <div className={`w-14 h-7 rounded-full relative transition-all duration-500 ${selectedAsset.loop_animation ? 'bg-orange-600 shadow-[0_0_20px_rgba(234,88,12,0.4)]' : 'bg-white/5 border border-white/10'}`}>
+                                                    <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-all duration-500 ${selectedAsset.loop_animation ? 'translate-x-7 scale-110 shadow-lg' : 'opacity-40'}`} />
                                                 </div>
-                                            </div>
-                                        )}
+                                                <input type="checkbox" checked={selectedAsset.loop_animation || false} onChange={(e) => updateAsset(selectedAsset.id, { loop_animation: e.target.checked })} className="hidden" />
+                                                <div className="space-y-1">
+                                                    <span className="text-sm font-black text-white uppercase tracking-tight group-hover:text-orange-400 transition-colors">Vòng lặp Animation (Loop)</span>
+                                                    <p className="text-[10px] text-white/40 font-medium uppercase tracking-[0.1em]">Tự động khởi động lại chuỗi keyframe sau khi kết thúc.</p>
+                                                </div>
+                                            </label>
+                                        </div>
                                     </div>
                                 )}
                             </div>
-                        </section>
+                        </section >
                     ) : (
-                        <div className="bg-orange-50/50 rounded-[2.5rem] border-2 border-dashed border-orange-200 p-20 text-center space-y-6">
-                            <div className="w-24 h-24 bg-white rounded-[2rem] shadow-xl shadow-orange-100 flex items-center justify-center mx-auto border border-orange-100 animate-pulse">
+                        <div className="bg-orange-500/5 rounded-[2.5rem] border-2 border-dashed border-orange-500/10 p-20 text-center space-y-6">
+                            <div className="w-24 h-24 bg-orange-500/10 rounded-[2rem] shadow-2xl shadow-orange-500/5 flex items-center justify-center mx-auto border border-orange-500/20 animate-pulse">
                                 <Box size={40} className="text-orange-300" />
                             </div>
                             <div className="space-y-2">
-                                <h3 className="text-xl font-black text-orange-900 uppercase">Sẵn sàng thiết kế AR</h3>
-                                <p className="text-orange-700/60 max-w-sm mx-auto text-sm font-medium leading-relaxed">Chọn một asset từ danh sách bên trên hoặc thêm mới để bắt đầu cấu hình các thuộc tính 3D.</p>
+                                <h3 className="text-xl font-black text-white uppercase">Sẵn sàng thiết kế AR</h3>
+                                <p className="text-white/60 max-w-sm mx-auto text-sm font-medium leading-relaxed">Chọn một asset từ danh sách bên trên hoặc thêm mới để bắt đầu cấu hình các thuộc tính 3D.</p>
                             </div>
                         </div>
-                    )}
+                    )
+                    }
 
                     {/* 3. Global Settings */}
-                    <section className="bg-gray-900 text-white p-8 rounded-[2.5rem] shadow-2xl shadow-gray-200 space-y-8 relative overflow-hidden group">
+                    <section className="bg-[#121212] text-white p-8 rounded-[2.5rem] shadow-2xl shadow-black/80 border border-white/5 space-y-8 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 blur-[100px] pointer-events-none group-hover:bg-orange-500/20 transition-all duration-1000"></div>
 
                         <div className="flex items-center justify-between relative z-10">
@@ -1569,8 +1713,8 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     <Settings size={20} className="text-orange-400" />
                                 </div>
                                 <div>
-                                    <h3 className="font-black text-lg uppercase tracking-wider">Thiết lập chung</h3>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-60">Global Scene Configuration</p>
+                                    <h3 className="font-black text-2xl uppercase tracking-tighter">THIẾT LẬP CHUNG</h3>
+                                    <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.3em]">GLOBAL SCENE CONFIGURATION</p>
                                 </div>
                             </div>
                         </div>
@@ -1582,25 +1726,35 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     <Sun size={14} /> Ánh sáng & Render (PBR)
                                 </h4>
                                 <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-end">
-                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ambient Light</span>
-                                            <span className="text-xs font-black text-white px-2 py-0.5 bg-white/5 rounded-md border border-white/10">{(config.ambient_intensity || 1.0).toFixed(1)}</span>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black text-white/60 uppercase tracking-widest">AMBIENT LIGHT</span>
+                                            <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{(config.ambient_intensity || 1.0).toFixed(1)}</span>
                                         </div>
-                                        <input type="range" min="0" max="3" step="0.1" value={config.ambient_intensity || 1} onChange={(e) => updateConfig('ambient_intensity', parseFloat(e.target.value))} className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-end">
-                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Phơi sáng (Exposure)</span>
-                                            <span className="text-xs font-black text-white px-2 py-0.5 bg-white/5 rounded-md border border-white/10">{(config.exposure || 1.0).toFixed(1)}</span>
+                                        <div className="relative h-6 flex items-center">
+                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                                <div className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${((config.ambient_intensity || 1) / 3) * 100}%` }} />
+                                            </div>
+                                            <input type="range" min="0" max="3" step="0.1" value={config.ambient_intensity || 1} onChange={(e) => updateConfig('ambient_intensity', parseFloat(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
                                         </div>
-                                        <input type="range" min="0.1" max="3" step="0.1" value={config.exposure || 1} onChange={(e) => updateConfig('exposure', parseFloat(e.target.value))} className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" />
                                     </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Environment Map (HDR)</label>
-                                        <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/10">
-                                            <input type="text" value={config.environment_url || ''} onChange={(e) => updateConfig('environment_url', e.target.value)} className="flex-1 bg-transparent border-none rounded-lg px-2 py-1 text-xs text-white outline-none placeholder:text-gray-600" placeholder="URL .hdr hoặc .jpg..." />
-                                            <label className="bg-orange-500 text-white p-2 rounded-xl cursor-pointer hover:bg-orange-600 transition shadow-lg shadow-orange-900/40">
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black text-white/60 uppercase tracking-widest">PHƠI SÁNG (EXPOSURE)</span>
+                                            <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{(config.exposure || 1.0).toFixed(1)}</span>
+                                        </div>
+                                        <div className="relative h-6 flex items-center">
+                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                                <div className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${((config.exposure || 1) / 3) * 100}%` }} />
+                                            </div>
+                                            <input type="range" min="0.1" max="3" step="0.1" value={config.exposure || 1} onChange={(e) => updateConfig('exposure', parseFloat(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-black text-white/60 uppercase tracking-widest block">ENVIRONMENT MAP (HDR)</label>
+                                        <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl border border-white/5 shadow-inner group focus-within:border-orange-500/50 transition-all">
+                                            <input type="text" value={config.environment_url || ''} onChange={(e) => updateConfig('environment_url', e.target.value)} className="flex-1 bg-transparent border-none rounded-lg px-4 py-2 text-xs text-white outline-none placeholder:text-white/5 font-mono" placeholder="https://..." />
+                                            <label className="bg-orange-500 text-white p-3 rounded-xl cursor-pointer hover:bg-orange-600 transition shadow-lg shadow-orange-900/40">
                                                 <Upload size={14} />
                                                 <input type="file" className="hidden" accept=".hdr,.jpg" onChange={(e) => handleFileUpload(e, 'temp', 'env').then(url => url && updateConfig('environment_url', url))} />
                                             </label>
@@ -1615,98 +1769,115 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                     <Maximize size={14} /> Capture Settings
                                 </h4>
                                 <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-end">
-                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Video Duration (seconds)</span>
-                                            <span className="text-xs font-black text-white px-2 py-0.5 bg-white/5 rounded-md border border-white/10">{config.max_video_duration || 30}s</span>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black text-white/60 uppercase tracking-widest">VIDEO DURATION (SECONDS)</span>
+                                            <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{config.max_video_duration || 30}s</span>
                                         </div>
-                                        <input type="range" min="5" max="60" step="5" value={config.max_video_duration || 30} onChange={(e) => updateConfig('max_video_duration', parseInt(e.target.value))} className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white" />
+                                        <div className="relative h-6 flex items-center">
+                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                                <div className="h-full bg-white/20" style={{ width: `${((config.max_video_duration || 30) / 60) * 100}%` }} />
+                                            </div>
+                                            <input type="range" min="5" max="60" step="5" value={config.max_video_duration || 30} onChange={(e) => updateConfig('max_video_duration', parseInt(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
+                                            <div className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.5)] pointer-events-none" style={{ left: `calc(${((config.max_video_duration || 30) / 60) * 100}% - 8px)` }}></div>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-1 gap-4 pt-2">
                                         <button
                                             onClick={() => updateConfig('enable_capture', !config.enable_capture)}
-                                            className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${config.enable_capture ? 'bg-orange-500/20 border-orange-500 text-orange-400' : 'bg-white/5 border-white/10 text-gray-500'
-                                                }`}
+                                            className={`flex items-center justify-between p-6 rounded-[1.5rem] border-2 transition-all duration-500 scale-active group ${config.enable_capture ? 'bg-orange-500/10 border-orange-500 shadow-[0_0_30px_rgba(249,115,22,0.1)]' : 'bg-white/5 border-white/5 text-white/40'}`}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${config.enable_capture ? 'bg-orange-500 text-white' : 'bg-white/10'}`}>
-                                                    <Camera size={16} />
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${config.enable_capture ? 'bg-orange-500 text-white shadow-lg' : 'bg-white/5 text-white/40'}`}>
+                                                    <Camera size={20} />
                                                 </div>
-                                                <span className="text-xs font-black uppercase tracking-tight">Cho phép Chụp/Quay</span>
+                                                <span className={`text-[11px] font-black uppercase tracking-wider ${config.enable_capture ? 'text-orange-500' : 'text-white/40'}`}>CHO PHÉP CHỤP/QUAY</span>
                                             </div>
-                                            <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 ${config.enable_capture ? 'border-orange-500 bg-orange-500' : 'border-gray-700'}`}>
-                                                {config.enable_capture && <Check size={10} className="text-white" />}
+                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${config.enable_capture ? 'border-orange-500 bg-orange-500 rotate-0' : 'border-white/10 bg-transparent rotate-90'}`}>
+                                                {config.enable_capture && <Check size={14} className="text-white" strokeWidth={4} />}
                                             </div>
                                         </button>
+
                                         <button
                                             onClick={() => updateConfig('show_scan_hint', config.show_scan_hint === false)}
-                                            className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${config.show_scan_hint !== false ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-white/5 border-white/10 text-gray-500'
-                                                }`}
+                                            className={`flex items-center justify-between p-6 rounded-[1.5rem] border-2 transition-all duration-500 scale-active group ${config.show_scan_hint !== false ? 'bg-blue-600/10 border-blue-600 shadow-[0_0_30px_rgba(37,99,235,0.1)]' : 'bg-white/5 border-white/5 text-white/40'}`}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${config.show_scan_hint !== false ? 'bg-blue-500 text-white' : 'bg-white/10'}`}>
-                                                    <HelpCircle size={16} />
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${config.show_scan_hint !== false ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 text-white/40'}`}>
+                                                    <HelpCircle size={20} />
                                                 </div>
-                                                <span className="text-xs font-black uppercase tracking-tight">Hướng dẫn Scan</span>
+                                                <span className={`text-[11px] font-black uppercase tracking-wider ${config.show_scan_hint !== false ? 'text-blue-500' : 'text-white/40'}`}>HƯỚNG DẪN SCAN</span>
                                             </div>
-                                            <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 ${config.show_scan_hint !== false ? 'border-blue-500 bg-blue-500' : 'border-gray-700'}`}>
-                                                {config.show_scan_hint !== false && <Check size={10} className="text-white" />}
+                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${config.show_scan_hint !== false ? 'border-blue-600 bg-blue-600 rotate-0' : 'border-white/10 bg-transparent rotate-90'}`}>
+                                                {config.show_scan_hint !== false && <Check size={14} className="text-white" strokeWidth={4} />}
                                             </div>
                                         </button>
                                     </div>
 
-                                    {/* Marker Upload - NEW */}
-                                    <div className="space-y-3 pt-6 border-t border-white/5">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block flex items-center gap-1">
-                                            <ImageIcon size={12} className="text-blue-400" /> Marker File (.mind)
+                                    <div className="space-y-4 pt-6 border-t border-white/5">
+                                        <label className="text-[10px] font-black text-white/60 uppercase tracking-widest block flex items-center gap-2">
+                                            <ImageIcon size={14} className="text-blue-500" /> MARKER FILE (.MIND)
                                         </label>
-                                        <div className="flex gap-2 p-1.5 bg-blue-500/5 rounded-2xl border border-blue-500/20">
+                                        <div className="flex gap-2 p-1.5 bg-blue-500/5 rounded-2xl border border-blue-500/20 shadow-inner group focus-within:border-blue-500 transition-all">
                                             <input
                                                 type="text"
                                                 value={config.marker_url || ''}
                                                 onChange={(e) => updateConfig('marker_url', e.target.value)}
-                                                className="flex-1 bg-transparent border-none rounded-lg px-2 py-1 text-xs text-white outline-none placeholder:text-gray-600 font-mono"
-                                                placeholder="URL file .mind..."
+                                                className="flex-1 bg-transparent border-none rounded-lg px-4 py-2 text-xs text-white outline-none placeholder:text-white/5 font-mono"
+                                                placeholder="https://..."
                                             />
-                                            <label className="bg-blue-600 text-white p-2 rounded-xl cursor-pointer hover:bg-blue-700 transition shadow-lg shadow-blue-900/40">
+                                            <label className="bg-blue-600 text-white p-3 rounded-xl cursor-pointer hover:bg-blue-500 transition shadow-lg shadow-blue-900/40">
                                                 <Upload size={14} />
                                                 <input type="file" className="hidden" accept=".mind" onChange={(e) => handleFileUpload(e, 'temp', 'markers').then(url => url && updateConfig('marker_url', url))} />
                                             </label>
                                         </div>
-                                        <p className="text-[9px] text-gray-500 italic">Cần thiết để hệ thống nhận diện được hình ảnh mục tiêu.</p>
+                                        <p className="text-[9px] text-white/40 font-medium italic">Cần thiết để hệ thống nhận diện được hình ảnh mục tiêu.</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </section>
-                </div>
+                </div >
 
                 {/* Right Column: Sticky Preview Panel */}
-                <div className="w-full xl:w-[420px] flex-shrink-0">
+                < div className="w-full xl:w-[420px] flex-shrink-0" >
                     <div className="xl:sticky xl:top-8 space-y-6">
                         <div className="flex items-center justify-between mb-2 px-2">
                             <div className="space-y-1">
-                                <h3 className="font-black text-xl text-gray-900 uppercase tracking-tighter flex items-center gap-2">
-                                    Live Preview
+                                <h3 className="font-black text-xl text-white uppercase tracking-tighter flex items-center gap-2">
+                                    Mô phỏng AR
                                 </h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em]">Real-time Simulation</p>
+                                <p className="text-[10px] text-white/40 font-bold uppercase tracking-[0.2em]">Real-time Simulation</p>
                             </div>
-                            <div className="flex bg-gray-100 p-1 rounded-xl">
+                            <div className="flex bg-white/5 p-1 rounded-xl border border-white/5 gap-1">
+                                <button
+                                    onClick={() => setPreviewMode('ar')}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${previewMode === 'ar' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white uppercase'}`}
+                                >
+                                    AR VIEW
+                                </button>
+                                <button
+                                    onClick={() => setPreviewMode('studio')}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${previewMode === 'studio' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white uppercase'}`}
+                                >
+                                    STUDIO
+                                </button>
+                                <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
                                 <button
                                     onClick={() => setDebugMode(!debugMode)}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${debugMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-100' : 'text-gray-400 hover:text-gray-600 uppercase'}`}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${debugMode ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white uppercase'}`}
                                 >
-                                    DEBUG: {debugMode ? 'ON' : 'OFF'}
+                                    DEBUG
                                 </button>
                             </div>
                         </div>
 
                         {/* Phone Container Aspect 9:16 */}
-                        <div className="relative w-full aspect-[9/16] bg-[#0c0c0c] rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.3)] border-[12px] border-gray-900 ring-2 ring-gray-900/10 transition-transform duration-500 hover:scale-[1.02]">
+                        <div className="relative w-full aspect-[9/16] bg-[#0c0c0c] rounded-[3.5rem] p-4 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8)] border-[12px] border-[#1a1a1a] ring-2 ring-white/5 transition-transform duration-500 hover:scale-[1.02]">
                             {/* Notch */}
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 h-8 w-40 bg-gray-900 rounded-b-3xl z-40 flex items-center justify-center gap-4">
-                                <div className="w-16 h-1 w-white/10 rounded-full"></div>
-                                <div className="w-2 h-2 bg-gray-800 rounded-full border border-white/5"></div>
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 h-8 w-40 bg-[#1a1a1a] rounded-b-3xl z-40 flex items-center justify-center gap-4 border-x border-b border-white/5">
+                                <div className="w-16 h-1 bg-white/10 rounded-full shadow-inner"></div>
+                                <div className="w-2.5 h-2.5 bg-black rounded-full border border-white/5 ring-1 ring-blue-500/20"></div>
                             </div>
 
                             {/* AR Content */}
@@ -1722,27 +1893,34 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             </div>
                                             <div className="text-center">
                                                 <p className="text-white text-[10px] font-black uppercase tracking-widest animate-pulse">Requesting Camera</p>
-                                                <p className="text-white/30 text-[9px] mt-1 italic">Vui lòng cho phép quyền truy cập camera...</p>
+                                                <p className="text-white/50 text-[9px] mt-1 italic">Vui lòng cho phép quyền truy cập camera...</p>
                                             </div>
                                         </div>
                                     }>
-                                        <ImageTrackingPreview
-                                            markerUrl={config.marker_url}
-                                            config={config}
-                                            onClose={() => setShowPreview(false)}
-                                        />
+                                        {previewMode === 'ar' ? (
+                                            <ImageTrackingPreview
+                                                markerUrl={config.marker_url}
+                                                config={config}
+                                                onClose={() => setShowPreview(false)}
+                                            />
+                                        ) : (
+                                            <StudioPreview
+                                                config={config}
+                                                onClose={() => setShowPreview(false)}
+                                            />
+                                        )}
                                     </Suspense>
                                 ) : (
                                     <div
                                         onClick={() => setShowPreview(true)}
-                                        className="absolute inset-0 flex flex-col items-center justify-center text-white/40 cursor-pointer group bg-[radial-gradient(circle_at_center,rgba(255,100,0,0.05),transparent)] hover:bg-black/80 transition-all duration-700"
+                                        className="absolute inset-0 flex flex-col items-center justify-center text-white/60 cursor-pointer group bg-[radial-gradient(circle_at_center,rgba(255,100,0,0.05),transparent)] hover:bg-black/80 transition-all duration-700"
                                     >
-                                        <div className="w-24 h-24 bg-white shadow-2xl shadow-orange-500/20 rounded-[2.5rem] flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-6 group-hover:bg-orange-500 transition-all duration-500 transform border border-white/10">
+                                        <div className="w-24 h-24 bg-white/5 shadow-2xl shadow-orange-500/20 rounded-[2.5rem] flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-6 group-hover:bg-orange-500 transition-all duration-500 transform border border-white/10">
                                             <Play size={40} className="text-orange-500 group-hover:text-white transition-colors fill-current ml-2" />
                                         </div>
                                         <div className="text-center space-y-2">
-                                            <h4 className="text-lg font-black text-white px-8 leading-tight tracking-tight">START CAMERA SIMULATION</h4>
-                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] group-hover:text-orange-400 transition-colors">Requires Permissions</p>
+                                            <h4 className="text-lg font-black text-white px-8 leading-tight tracking-tight uppercase">Bắt đầu mô phỏng AR</h4>
+                                            <p className="text-[10px] font-black text-white/50 uppercase tracking-[0.4em] group-hover:text-orange-500 transition-all duration-300">Cần quyền truy cập Camera</p>
                                         </div>
 
                                         {/* Scan Hint simulator */}
@@ -1765,14 +1943,16 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
 
                     </div>
-                </div>
-            </div>
+                </div >
+            </div >
         )
     }
 
     return (
-        <div className="text-center text-gray-400 py-8">
-            Chưa có cấu hình visual cho template này.
+        <div className="min-h-[400px] flex flex-col items-center justify-center text-center p-8 bg-[#0a0a0a] border border-white/5 rounded-3xl">
+            <Settings size={48} className="text-white/10 mb-4 animate-spin-slow" />
+            <h3 className="text-white font-black uppercase tracking-widest text-sm">Template không xác định</h3>
+            <p className="text-white/60 text-[10px] mt-2 font-medium">Cấu hình visual cho template này đang được phát triển hoặc không tồn tại.</p>
         </div>
     )
 }

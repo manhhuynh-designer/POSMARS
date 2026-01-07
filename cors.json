@@ -5,6 +5,9 @@
         ],
         "method": [
             "GET",
+            "PUT",
+            "POST",
+            "DELETE",
             "HEAD",
             "OPTIONS"
         ],

@@ -61,28 +61,28 @@ export default function LeadFormBuilder({ initialConfig, onChange }: LeadFormBui
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-10">
             {/* General Settings */}
-            <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                <h3 className="font-medium flex items-center gap-2 text-gray-700">
-                    <Settings size={16} /> Cấu hình chung
+            <div className="bg-white/5 p-8 rounded-3xl border border-white/5 space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-white/40">
+                    <Settings size={14} className="text-orange-500" /> Cấu hình chung
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Nút Gửi (Submit Text)</label>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Nút Gửi (Submit Text)</label>
                         <input
                             value={config.submit_text}
                             onChange={e => setConfig({ ...config, submit_text: e.target.value })}
-                            className="w-full border rounded px-3 py-2 text-sm"
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all"
                             placeholder="Tiếp tục"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Điều khoản (Consent Text)</label>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Điều khoản (Consent Text)</label>
                         <input
                             value={config.consent_text}
                             onChange={e => setConfig({ ...config, consent_text: e.target.value })}
-                            className="w-full border rounded px-3 py-2 text-sm"
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all"
                             placeholder="Tôi đồng ý với điều khoản..."
                         />
                     </div>
@@ -90,103 +90,108 @@ export default function LeadFormBuilder({ initialConfig, onChange }: LeadFormBui
             </div>
 
             {/* Field List */}
-            <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-700">Danh sách trường</h3>
+            <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <h3 className="font-black text-white uppercase tracking-tighter">Danh sách trường dữ liệu</h3>
                     <button
                         onClick={addField}
-                        className="flex items-center gap-1 text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100"
+                        className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] bg-white/5 text-white/60 px-5 py-2.5 rounded-xl border border-white/10 hover:bg-orange-500 hover:text-white hover:border-orange-500 transition-all active:scale-95"
                     >
-                        <Plus size={16} /> Thêm trường
+                        <Plus size={14} /> Thêm trường mới
                     </button>
                 </div>
 
                 {config.fields.length === 0 && (
-                    <div className="text-center p-8 bg-gray-50 rounded-lg text-gray-400 border border-dashed">
-                        Chưa có trường nào.
+                    <div className="text-center py-16 bg-white/5 rounded-3xl text-white/10 border border-white/5 border-dashed italic text-sm">
+                        Chưa có trường nào được thêm vào form.
                     </div>
                 )}
 
-                {config.fields.map((field, index) => (
-                    <div key={`field-${index}`} className="bg-white border rounded-lg p-4 shadow-sm hover:border-orange-300 transition-colors group">
-                        <div className="flex items-start gap-3">
-                            <div className="text-gray-300 mt-2 cursor-move">
-                                <GripVertical size={20} />
-                            </div>
-
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-4">
-                                {/* Label */}
-                                <div className="md:col-span-4">
-                                    <label className="block text-xs text-gray-400 mb-1">Tên trường (Label)</label>
-                                    <input
-                                        value={field.label}
-                                        onChange={e => updateField(index, { label: e.target.value })}
-                                        className="w-full border rounded px-2 py-1.5 text-sm font-medium"
-                                        placeholder="Họ và tên"
-                                    />
+                <div className="space-y-4">
+                    {config.fields.map((field, index) => (
+                        <div key={`field-${index}`} className="bg-[#121212] border border-white/5 rounded-2xl p-6 shadow-2xl hover:border-orange-500/30 transition-all duration-300 group">
+                            <div className="flex items-start gap-4">
+                                <div className="text-white/10 mt-2 cursor-grab active:cursor-grabbing group-hover:text-white/40 transition-colors">
+                                    <GripVertical size={20} />
                                 </div>
 
-                                {/* ID (Auto/Manual) & Required */}
-                                <div className="md:col-span-3">
-                                    <label className="block text-xs text-gray-400 mb-1">ID (Key)</label>
-                                    <input
-                                        value={field.id}
-                                        onChange={e => updateField(index, { id: e.target.value })}
-                                        className="w-full border rounded px-2 py-1.5 text-sm font-mono text-gray-600 bg-gray-50"
-                                    />
-                                </div>
-
-                                {/* Type */}
-                                <div className="md:col-span-3">
-                                    <label className="block text-xs text-gray-400 mb-1">Loại</label>
-                                    <select
-                                        value={field.type}
-                                        onChange={e => updateField(index, { type: e.target.value as any })}
-                                        className="w-full border rounded px-2 py-1.5 text-sm"
-                                    >
-                                        <option value="text">Văn bản (Text)</option>
-                                        <option value="tel">Số điện thoại</option>
-                                        <option value="email">Email</option>
-                                        <option value="select">Danh sách chọn</option>
-                                    </select>
-                                </div>
-
-                                {/* Actions */}
-                                <div className="md:col-span-2 flex items-center justify-end gap-2 pt-5">
-                                    <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6">
+                                    {/* Label */}
+                                    <div className="md:col-span-4">
+                                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Tên trường (Label)</label>
                                         <input
-                                            type="checkbox"
-                                            checked={field.required}
-                                            onChange={e => updateField(index, { required: e.target.checked })}
-                                            className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                                        />
-                                        Bắt buộc
-                                    </label>
-                                    <button
-                                        onClick={() => removeField(index)}
-                                        className="text-gray-400 hover:text-red-500 p-1"
-                                        title="Xóa"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
-
-                                {/* Extra Options for Select type */}
-                                {field.type === 'select' && (
-                                    <div className="md:col-span-12 bg-gray-50 p-3 rounded text-sm">
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Các lựa chọn (phân cách bằng dấu phẩy)</label>
-                                        <input
-                                            value={field.options?.join(', ') || ''}
-                                            onChange={e => handleOptionsChange(index, e.target.value)}
-                                            className="w-full border rounded px-2 py-1.5"
-                                            placeholder="HCM, Hà Nội, Đà Nẵng"
+                                            value={field.label}
+                                            onChange={e => updateField(index, { label: e.target.value })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-sm text-white/90 font-bold focus:border-orange-500 outline-none transition-all"
+                                            placeholder="Họ và tên"
                                         />
                                     </div>
-                                )}
+
+                                    {/* ID (Auto/Manual) & Required */}
+                                    <div className="md:col-span-3">
+                                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">ID (Key)</label>
+                                        <input
+                                            value={field.id}
+                                            onChange={e => updateField(index, { id: e.target.value })}
+                                            className="w-full bg-black/20 border border-white/5 rounded-xl px-4 py-2 text-[11px] font-mono text-white/30 focus:text-white transition-all outline-none"
+                                        />
+                                    </div>
+
+                                    {/* Type */}
+                                    <div className="md:col-span-3">
+                                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Loại dữ liệu</label>
+                                        <select
+                                            value={field.type}
+                                            onChange={e => updateField(index, { type: e.target.value as any })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 transition-all appearance-none"
+                                        >
+                                            <option value="text">Văn bản (Text)</option>
+                                            <option value="tel">Số điện thoại</option>
+                                            <option value="email">Email</option>
+                                            <option value="select">Danh sách chọn</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div className="md:col-span-2 flex items-center justify-end gap-4 pt-6">
+                                        <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest cursor-pointer select-none group/req">
+                                            <div className={`w-8 h-4 rounded-full transition-all relative ${field.required ? 'bg-orange-500' : 'bg-white/10'}`}>
+                                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${field.required ? 'left-4.5' : 'left-0.5'}`} />
+                                            </div>
+                                            <input
+                                                type="checkbox"
+                                                checked={field.required}
+                                                onChange={e => updateField(index, { required: e.target.checked })}
+                                                className="hidden"
+                                            />
+                                            <span className={`${field.required ? 'text-white' : 'text-white/40'} transition-colors`}>{field.required ? 'REQ' : 'OPT'}</span>
+                                        </label>
+                                        <button
+                                            onClick={() => removeField(index)}
+                                            className="text-white/10 hover:text-red-500 p-2 hover:bg-red-500/10 rounded-lg transition-all"
+                                            title="Xóa"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+
+                                    {/* Extra Options for Select type */}
+                                    {field.type === 'select' && (
+                                        <div className="md:col-span-12 bg-black/40 p-5 rounded-2xl border border-white/5 mt-2">
+                                            <label className="block text-[10px] font-extrabold text-white/40 uppercase tracking-[0.2em] mb-3 select-none">Các lựa chọn (phân cách bằng dấu phẩy)</label>
+                                            <input
+                                                value={field.options?.join(', ') || ''}
+                                                onChange={e => handleOptionsChange(index, e.target.value)}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/80 focus:border-orange-500 outline-none placeholder:text-white/10"
+                                                placeholder="Ví dụ: HCM, Hà Nội, Đà Nẵng"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    ))}
+                </div>
             </div>
         </div>
     )

@@ -136,137 +136,137 @@ export default function AnalyticsPage() {
         link.click()
     }
 
-    if (loading) return <div className="p-8">Loading...</div>
+    if (loading) return (
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+            <div className="animate-spin w-10 h-10 border-4 border-white/5 border-t-orange-500 rounded-full" />
+        </div>
+    )
 
     return (
-        <div className="max-w-6xl mx-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                    <Link href={`/admin/projects/${projectId}`} className="text-gray-500 hover:text-gray-700">
-                        <ArrowLeft size={20} />
-                    </Link>
-                    <div>
-                        <h1 className="text-2xl font-bold">Analytics</h1>
-                        <p className="text-sm text-gray-500">{project.name || project.client_slug}</p>
-                    </div>
-                </div>
-                <button onClick={exportToExcel} className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
-                    <Download size={16} /> Export Excel
-                </button>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-white rounded-xl shadow p-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <Users className="text-blue-600" size={24} />
-                        </div>
+        <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-8">
+            <div className="max-w-6xl mx-auto space-y-8">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-[#121212] p-8 rounded-3xl border border-white/5 shadow-2xl backdrop-blur-xl">
+                    <div className="flex items-center gap-6">
+                        <Link href={`/admin/projects/${projectId}`} className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all">
+                            <ArrowLeft size={20} />
+                        </Link>
                         <div>
-                            <p className="text-sm text-gray-500">Tổng Leads</p>
-                            <p className="text-2xl font-bold">{stats.total}</p>
+                            <h1 className="text-3xl font-black uppercase tracking-tighter">Project Analytics</h1>
+                            <p className="text-[10px] text-white/40 font-black uppercase tracking-[0.3em] mt-1">{project.name || project.client_slug}</p>
                         </div>
                     </div>
-                </div>
-                <div className="bg-white rounded-xl shadow p-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                            <Calendar className="text-green-600" size={24} />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Hôm nay</p>
-                            <p className="text-2xl font-bold">{stats.today}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl shadow p-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                            <TrendingUp className="text-orange-600" size={24} />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">7 ngày qua</p>
-                            <p className="text-2xl font-bold">{stats.thisWeek}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl shadow p-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <MapPin className="text-purple-600" size={24} />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Điểm bán</p>
-                            <p className="text-2xl font-bold">{stats.byPosId.length}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {/* Daily Chart */}
-                <div className="bg-white rounded-xl shadow p-6">
-                    <h3 className="font-bold mb-4">Leads theo ngày (7 ngày gần nhất)</h3>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <LineChart data={stats.byDay}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Line type="monotone" dataKey="count" stroke="#FF6B35" strokeWidth={2} />
-                        </LineChart>
-                    </ResponsiveContainer>
+                    <button onClick={exportToExcel} className="flex items-center gap-3 bg-green-600 text-white px-8 py-3 rounded-2xl hover:bg-green-500 font-black uppercase text-[11px] tracking-widest shadow-lg shadow-green-900/20 transition-all active:scale-95">
+                        <Download size={18} /> EXPORT EXCEL
+                    </button>
                 </div>
 
-                {/* By POS ID Chart */}
-                <div className="bg-white rounded-xl shadow p-6">
-                    <h3 className="font-bold mb-4">Top điểm bán</h3>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={stats.byPosId}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="count" fill="#FF6B35" />
-                        </BarChart>
-                    </ResponsiveContainer>
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    {[
+                        { label: 'TỔNG LEADS', value: stats.total, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+                        { label: 'HÔM NAY', value: stats.today, icon: Calendar, color: 'text-green-500', bg: 'bg-green-500/10', border: 'border-green-500/20' },
+                        { label: '7 NGÀY QUA', value: stats.thisWeek, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+                        { label: 'ĐIỂM BÁN', value: stats.byPosId.length, icon: MapPin, color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/20' }
+                    ].map((stat, i) => (
+                        <div key={i} className="bg-[#121212] border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
+                            <div className={`absolute top-0 right-0 w-24 h-24 ${stat.bg} blur-[40px] opacity-20 group-hover:opacity-40 transition-opacity`}></div>
+                            <div className="flex items-center gap-4 relative z-10">
+                                <div className={`w-14 h-14 ${stat.bg} ${stat.border} border rounded-2xl flex items-center justify-center ${stat.color} shadow-lg shadow-black/40`}>
+                                    <stat.icon size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-white/40 font-black uppercase tracking-widest">{stat.label}</p>
+                                    <p className="text-3xl font-black tracking-tighter mt-1">{stat.value}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
-            </div>
 
-            {/* Leads Table */}
-            <div className="bg-white rounded-xl shadow overflow-hidden">
-                <div className="px-6 py-4 border-b">
-                    <h3 className="font-bold">Danh sách Leads gần nhất</h3>
+                {/* Charts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Daily Chart */}
+                    <div className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl">
+                        <div className="flex items-center justify-between mb-8">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Leads theo ngày</h3>
+                            <div className="px-3 py-1 bg-orange-500/10 text-orange-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-orange-500/20">7 NGÀY GẦN NHẤT</div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <LineChart data={stats.byDay}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                <XAxis dataKey="name" stroke="rgba(255,255,255,0.2)" fontSize={10} fontWeight="900" />
+                                <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} fontWeight="900" />
+                                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }} />
+                                <Line type="monotone" dataKey="count" stroke="#f97316" strokeWidth={4} dot={{ fill: '#f97316', r: 4, strokeWidth: 2, stroke: '#0a0a0a' }} activeDot={{ r: 8, strokeWidth: 0 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* By POS ID Chart */}
+                    <div className="bg-[#121212] border border-white/5 rounded-[2rem] p-8 shadow-2xl">
+                        <div className="flex items-center justify-between mb-8">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Top điểm bán</h3>
+                            <div className="px-3 py-1 bg-blue-500/10 text-blue-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-blue-500/20">THEO POS ID</div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={stats.byPosId}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                <XAxis dataKey="name" stroke="rgba(255,255,255,0.2)" fontSize={10} fontWeight="900" />
+                                <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} fontWeight="900" />
+                                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }} cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                                <Bar dataKey="count" fill="#f97316" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
-                <table className="w-full">
-                    <thead className="bg-gray-50 text-left text-sm text-gray-600">
-                        <tr>
-                            <th className="px-6 py-3">Họ tên</th>
-                            <th className="px-6 py-3">SĐT</th>
-                            <th className="px-6 py-3">POS ID</th>
-                            <th className="px-6 py-3">Thời gian</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                        {leads.slice(0, 20).map(lead => (
-                            <tr key={lead.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-3">{lead.user_data?.name || '-'}</td>
-                                <td className="px-6 py-3">{lead.user_data?.phone || '-'}</td>
-                                <td className="px-6 py-3">
-                                    <span className="px-2 py-1 bg-gray-100 rounded text-sm">{lead.pos_id || '-'}</span>
-                                </td>
-                                <td className="px-6 py-3 text-sm text-gray-500">
-                                    {new Date(lead.created_at).toLocaleString('vi-VN')}
-                                </td>
-                            </tr>
-                        ))}
-                        {leads.length === 0 && (
-                            <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">Chưa có leads</td></tr>
-                        )}
-                    </tbody>
-                </table>
+
+                {/* Leads Table */}
+                <div className="bg-[#121212] border border-white/5 rounded-[2rem] shadow-2xl overflow-hidden">
+                    <div className="px-8 py-6 border-b border-white/5 bg-white/20 flex items-center justify-between">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Danh sách Leads gần nhất</h3>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">LIVE UPDATES</span>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-black/40 text-left text-[10px] font-black text-white/60 uppercase tracking-widest border-b border-white/5">
+                                <tr>
+                                    <th className="px-8 py-5">Họ tên</th>
+                                    <th className="px-8 py-5">SĐT</th>
+                                    <th className="px-8 py-5">POS ID</th>
+                                    <th className="px-8 py-5">Thời gian</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {leads.slice(0, 20).map(lead => (
+                                    <tr key={lead.id} className="hover:bg-white/5 transition-colors group">
+                                        <td className="px-8 py-5">
+                                            <p className="font-black text-sm uppercase tracking-tighter text-white group-hover:text-orange-500 transition-colors">{lead.user_data?.name || '-'}</p>
+                                        </td>
+                                        <td className="px-8 py-5 font-mono text-xs text-white/60">{lead.user_data?.phone || '-'}</td>
+                                        <td className="px-8 py-5">
+                                            <span className="px-3 py-1 bg-white/5 rounded-lg text-[10px] font-black border border-white/10 uppercase tracking-widest">{lead.pos_id || '-'}</span>
+                                        </td>
+                                        <td className="px-8 py-5 text-[10px] font-medium text-white/40 uppercase tracking-wider">
+                                            {new Date(lead.created_at).toLocaleString('vi-VN')}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {leads.length === 0 && (
+                                    <tr><td colSpan={4} className="px-8 py-20 text-center">
+                                        <div className="flex flex-col items-center gap-4 grayscale opacity-20">
+                                            <Users size={48} />
+                                            <p className="text-[10px] font-black uppercase tracking-widest">Chưa có leads nào được ghi nhận</p>
+                                        </div>
+                                    </td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     )

@@ -13,6 +13,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
     const containerRef = useRef<HTMLDivElement>(null)
     const sceneRef = useRef<any>(null)
     const entityRefs = useRef<{ [key: string]: HTMLElement }>({})
+    const observerRef = useRef<MutationObserver | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [targetFound, setTargetFound] = useState(false)
@@ -83,14 +84,28 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
 
         return () => {
             isMounted = false
+
+            if (observerRef.current) {
+                observerRef.current.disconnect()
+                observerRef.current = null
+            }
+
             // Explicitly stop and remove scene
             const scene = sceneRef.current
             if (scene) {
                 // @ts-ignore
-                const mindarSystem = scene.systems?.['mindar-image-system']
-                if (mindarSystem) mindarSystem.stop()
+                try {
+                    const mindarSystem = scene.systems?.['mindar-image-system']
+                    if (mindarSystem) mindarSystem.stop()
+                } catch (e) {
+                    console.warn('⚠️ Admin AR Cleanup: Failed to stop system', e)
+                }
 
-                scene.remove()
+                try {
+                    scene.remove()
+                } catch (e) {
+                    console.warn('⚠️ Admin AR Cleanup: Failed to remove scene', e)
+                }
             }
             // Stop any leftover camera tracks
             navigator.mediaDevices?.getUserMedia({ video: true })
@@ -144,24 +159,54 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
     const initAR = () => {
         if (!containerRef.current) return
 
+        // Register custom component for Model Opacity if not exists
+        if (!(window as any).AFRAME.components['model-opacity']) {
+            (window as any).AFRAME.registerComponent('model-opacity', {
+                schema: { default: 1.0 },
+                init: function () {
+                    this.el.addEventListener('model-loaded', this.update.bind(this));
+                },
+                update: function () {
+                    var mesh = this.el.getObject3D('mesh');
+                    var data = this.data;
+                    if (!mesh) { return; }
+                    mesh.traverse(function (node: any) {
+                        if (node.isMesh) {
+                            node.material.transparent = true;
+                            node.material.opacity = data;
+                            node.material.needsUpdate = true;
+                        }
+                    });
+                }
+            });
+        }
+
         // Cleanup existing if any
         if (sceneRef.current) {
             const oldScene = sceneRef.current
             // @ts-ignore
-            const mindarSystem = oldScene.systems?.['mindar-image-system']
-            if (mindarSystem) mindarSystem.stop()
-            oldScene.remove()
+            try {
+                const mindarSystem = oldScene.systems?.['mindar-image-system']
+                if (mindarSystem) mindarSystem.stop()
+            } catch (e) {
+                console.warn('⚠️ Admin AR: Failed to stop system', e)
+            }
+            try {
+                oldScene.remove()
+            } catch (e) {
+                console.warn('⚠️ Admin AR: Failed to remove scene', e)
+            }
         }
 
         console.log('🚀 Image Tracking: initAR() called, markerUrl:', markerUrl, 'facingMode:', facingMode)
 
         const scene = document.createElement('a-scene')
         // mindar-image system uses camera from navigator.mediaDevices.getUserMedia
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no`)
+        // Improved sensitivity: missTolerance: 10; warmupTolerance: 1; filterMinCF:0.01; filterBeta: 10 (Responsive)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.01; filterBeta: 10; missTolerance: 10; warmupTolerance: 1`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true')
-        scene.setAttribute('background', 'transparent: true')
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
         scene.classList.add('w-full', 'h-full')
@@ -194,6 +239,9 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         directional.setAttribute('intensity', (config.directional_intensity ?? 1).toString())
         scene.appendChild(directional)
 
+        // Note: Environment map (HDR) is NOT used in AR mode as it would block camera
+        // Use Studio Mode to preview with HDR environment
+
         // Target Entity
         const targetEntity = document.createElement('a-entity')
         targetEntity.setAttribute('mindar-image-target', 'targetIndex: 0')
@@ -202,39 +250,150 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         config.assets?.forEach(asset => {
             if (!asset.url) return
 
+            console.log(`🎬 AR Asset ${asset.name}: keyframes =`, asset.keyframes?.length || 0, asset.keyframes)
+
             let el: HTMLElement
             if (asset.type === 'video') {
+                const videoId = `preview-video-${asset.id}`
+                let videoEl = document.getElementById(videoId) as HTMLVideoElement
+
+                if (!videoEl) {
+                    videoEl = document.createElement('video')
+                    videoEl.id = videoId
+                    videoEl.setAttribute('src', asset.url)
+                    videoEl.setAttribute('crossorigin', 'anonymous')
+                    videoEl.setAttribute('playsinline', 'true')
+                    videoEl.setAttribute('webkit-playsinline', 'true')
+                    videoEl.preload = 'auto'
+                    videoEl.muted = true
+                    videoEl.loop = asset.video_loop !== false
+
+                    videoEl.style.position = 'absolute'
+                    videoEl.style.top = '0'
+                    videoEl.style.left = '0'
+                    videoEl.style.opacity = '0'
+                    videoEl.style.zIndex = '-1'
+                    videoEl.style.pointerEvents = 'none'
+
+                    document.body.appendChild(videoEl)
+
+                    videoEl.addEventListener('loadeddata', () => console.log(`🎥 Preview Video ${videoId} ready`))
+                    videoEl.addEventListener('error', (e) => console.error(`❌ Preview Video ${videoId} error:`, videoEl.error))
+                    videoEl.load()
+                }
+
                 el = document.createElement('a-video')
-                el.setAttribute('src', asset.url)
+                el.setAttribute('src', `#${videoId}`)
                 el.setAttribute('width', (asset.video_width ?? 1).toString())
                 el.setAttribute('height', (asset.video_height ?? 0.5625).toString())
+                el.setAttribute('material', `shader: flat; src: #${videoId}; transparent: true`)
+
+                // Video Keyframes (Option B) for Preview
+                if (asset.keyframes && asset.keyframes.length > 0) {
+                    const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+                    const props = ['position', 'rotation', 'scale', 'opacity'];
+
+                    props.forEach(prop => {
+                        const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                        if (kfsForProp.length === 0) return;
+
+                        kfsForProp.forEach((kf, idx) => {
+                            const animName = `animation__kf_${prop}_${idx}`;
+                            const prevKf = kfsForProp[idx - 1];
+                            let propertyName = prop;
+                            if (prop === 'opacity') propertyName = 'material.opacity';
+
+                            let startEvents = 'targetFound';
+                            if (idx > 0) {
+                                startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
+                            }
+
+                            // Delay is mainly for the first keyframe to respect start time
+                            const delay = idx === 0 ? kf.time * 1000 : 0;
+
+                            // Duration:
+                            // If idx > 0, duration is (kf.time - prevKf.time).
+                            // If idx = 0, duration is kf.time (0 -> time).
+                            const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
+
+                            let fromAttr = '';
+                            if (idx === 0) {
+                                let fromValue = '';
+                                if (prop === 'position') fromValue = asset.position.join(' ');
+                                else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
+                                else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
+                                else if (prop === 'opacity') fromValue = '1';
+                                fromAttr = `from: ${fromValue};`;
+                            }
+
+                            const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
+                            el.setAttribute(animName, animValue)
+                        });
+                    });
+                }
+
+                // Add play logic for this specific video
+                targetEntity.addEventListener('targetFound', () => {
+                    console.log('🎯 Preview Target Found - Playing Video')
+                    if (asset.video_autoplay !== false) {
+                        videoEl.play().catch(e => {
+                            console.warn('Preview Autoplay failed', e)
+                            videoEl.muted = true
+                            videoEl.play()
+                        })
+                    }
+                })
+                targetEntity.addEventListener('targetLost', () => {
+                    console.log('❌ Preview Target Lost - Pausing Video')
+                    videoEl.pause()
+                })
             } else {
                 el = document.createElement('a-gltf-model')
                 el.setAttribute('src', asset.url)
 
-                // Static vs Mixer animation
-                if (asset.animation_mode === 'auto') {
-                    el.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear')
-                } else if (asset.animation_mode === 'loop_clips') {
-                    el.setAttribute('animation-mixer', 'clip: *')
-                } else if (asset.animation_mode === 'tap_to_play') {
-                    el.setAttribute('animation-mixer', 'clip: *; loop: once; clampWhenFinished: true')
-                    el.setAttribute('class', 'clickable')
-                    el.addEventListener('click', () => {
-                        console.log('Tap to play animation')
-                        // @ts-ignore
-                        const mixer = el.components['animation-mixer']
-                        if (mixer) mixer.playNextClip()
-                    })
-                }
+                // Pro Mixer Keyframes for 3D Models (Option B)
+                if (asset.keyframes && asset.keyframes.length > 0) {
+                    const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+                    const props = ['position', 'rotation', 'scale', 'opacity'];
 
-                // Sequential Animation Steps
-                if (asset.steps && asset.steps.length > 0) {
-                    asset.steps.forEach((step, idx) => {
-                        const animAttr = `animation${idx === 0 ? '' : '__' + idx}`
-                        const startEvent = idx === 0 ? 'targetFound' : `animationcomplete${idx === 0 ? '' : '__' + (idx - 1)}`
-                        el.setAttribute(animAttr, `property: ${step.property}; to: ${step.to}; dur: ${step.duration}; easing: ${step.easing}; autoplay: false; startEvents: ${startEvent}`)
-                    })
+                    props.forEach(prop => {
+                        const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                        if (kfsForProp.length === 0) return;
+
+                        kfsForProp.forEach((kf, idx) => {
+                            const animName = `animation__kf_${prop}_${idx}`;
+                            const prevKf = kfsForProp[idx - 1];
+                            let propertyName = prop;
+                            if (prop === 'opacity') propertyName = 'model-opacity';
+
+                            let startEvents = 'targetFound';
+                            if (idx > 0) {
+                                startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
+                            }
+
+                            // Delay is mainly for the first keyframe to respect start time
+                            const delay = idx === 0 ? kf.time * 1000 : 0;
+
+                            const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
+
+                            let fromAttr = '';
+                            if (idx === 0) {
+                                let fromValue = '';
+                                if (prop === 'position') fromValue = asset.position.join(' ');
+                                else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
+                                else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
+                                else if (prop === 'opacity') fromValue = '1';
+                                fromAttr = `from: ${fromValue};`;
+                            }
+
+                            const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
+                            el.setAttribute(animName, animValue)
+                        });
+                    });
+
+                    // Initialize opacity
+                    el.setAttribute('model-opacity', '1')
+
                 }
             }
 
@@ -268,12 +427,29 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             }
         }, 5000)
 
-        targetEntity.addEventListener('targetFound', () => {
+        if (observerRef.current) {
+            observerRef.current.disconnect()
+            observerRef.current = null
+        }
+
+        targetEntity.addEventListener('targetFound', (e) => {
+            // Prevent infinite loop from bubbling child events
+            if (e.target !== targetEntity) return
+
             setTargetFound(true)
-            // Trigger video play if any
+
+            // Emit targetFound to all child elements to trigger animations
             config.assets?.forEach(asset => {
+                const el = entityRefs.current[asset.id]
+                if (el) {
+                    // emit(name, detail, bubbles) - set bubbles to false
+                    ; (el as any).emit('targetFound', null, false)
+                }
+
+                // Also play video if autoplay
                 if (asset.type === 'video' && asset.video_autoplay) {
-                    const video = document.querySelector(asset.url) as HTMLVideoElement
+                    const videoId = `asset-video-${asset.id}`
+                    const video = document.getElementById(videoId) as HTMLVideoElement
                     if (video) video.play()
                 }
             })
@@ -284,7 +460,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         // Monitor for when video element is added by MindAR (observe entire subtree)
         const attachVideo = (video: HTMLVideoElement) => {
             if (!containerRef.current || containerRef.current.contains(video)) return
-            console.log('📹 Image Tracking: Attaching camera video element')
+
             video.style.cssText = 'position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; z-index: 0 !important; background: none !important;'
             // Prepend video so it's behind the scene (scene has zIndex: 1)
             containerRef.current.prepend(video)
@@ -296,6 +472,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     if (node.nodeName === 'VIDEO') {
                         attachVideo(node as HTMLVideoElement)
                         observer.disconnect()
+                        observerRef.current = null
                         return
                     }
                     // Also check descendants of the added node
@@ -304,6 +481,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         if (vids.length > 0) {
                             attachVideo(vids[0])
                             observer.disconnect()
+                            observerRef.current = null
                             return
                         }
                     }
@@ -311,6 +489,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             }
         })
         observer.observe(document.body, { childList: true, subtree: true })
+        observerRef.current = observer
 
         // Fallback: search for video after short delay
         setTimeout(() => {
@@ -340,35 +519,43 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
 
             {/* Header */}
             <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/60 to-transparent z-10 flex items-center justify-between">
-                <span className="text-white text-sm font-medium flex items-center gap-2">
-                    <Camera size={16} />
-                    AR Preview
+                <span className="text-white/40 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <Camera size={14} className="text-orange-500" />
+                    AR Simulator
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     <button
                         onClick={toggleCamera}
-                        className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors flex items-center gap-2"
+                        className="px-4 py-2 bg-white/5 border border-white/10 hover:border-orange-500/50 rounded-xl text-white/40 hover:text-white transition-all flex items-center gap-2"
                         title="Đổi Camera"
                     >
-                        <RotateCcw size={16} />
-                        <span className="text-xs font-medium uppercase tracking-wider">
+                        <RotateCcw size={14} className="text-orange-500" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">
                             {facingMode === 'user' ? 'Front' : 'Back'}
                         </span>
                     </button>
                     <button
                         onClick={onClose}
-                        className="p-2 bg-white/10 hover:bg-pink-500/20 hover:text-pink-400 rounded-lg text-white transition-colors"
+                        className="w-10 h-10 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center text-white/40 hover:text-white hover:bg-orange-500 hover:border-orange-500 transition-all active:scale-90 shadow-xl"
                     >
-                        <X size={20} />
+                        <X size={18} />
                     </button>
                 </div>
             </div>
 
             {/* Loading */}
             {loading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-20">
-                    <Loader2 size={32} className="text-orange-500 animate-spin mb-2" />
-                    <p className="text-white text-sm">Đang khởi động camera...</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-20 backdrop-blur-md">
+                    <div className="relative">
+                        <div className="animate-spin w-16 h-16 border-2 border-white/5 border-t-orange-500 rounded-full mb-6 shadow-[0_0_20px_rgba(249,115,22,0.2)]" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <Camera size={20} className="text-orange-500 animate-pulse" />
+                        </div>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.3em]">Khởi động không gian AR</p>
+                        <p className="text-white/20 text-[8px] mt-2 font-bold uppercase tracking-widest italic">Vui lòng chờ trong giây lát...</p>
+                    </div>
                 </div>
             )}
 

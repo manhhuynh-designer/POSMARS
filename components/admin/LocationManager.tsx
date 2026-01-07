@@ -63,7 +63,6 @@ export default function LocationManager({ clientSlug, locations, onChange }: Loc
 
     const downloadQR = async (loc: Location) => {
         const link = generateLink(loc)
-        // Use QR API
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`
 
         const response = await fetch(qrUrl)
@@ -116,125 +115,124 @@ export default function LocationManager({ clientSlug, locations, onChange }: Loc
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
+        <div className="space-y-8">
+            <div className="flex items-center justify-between border-b border-white/5 pb-6">
                 <div>
-                    <h3 className="font-medium text-gray-700">Danh sách điểm bán ({locations.length})</h3>
-                    <p className="text-xs text-gray-500">Quản lý các điểm bán và tạo link/QR code riêng cho từng điểm</p>
+                    <h3 className="font-black text-white uppercase tracking-tighter text-xl">Điểm bán ({locations.length})</h3>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mt-1">Multi-location Tracking System</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     {locations.filter(l => l.code).length > 1 && (
                         <button
                             onClick={downloadAllQR}
                             disabled={downloading}
-                            className="flex items-center gap-1 text-sm bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50"
+                            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-green-500/10 text-green-400 border border-green-500/20 px-5 py-2.5 rounded-xl hover:bg-green-500 hover:text-white transition-all disabled:opacity-50"
                         >
-                            <Download size={16} /> {downloading ? 'Đang tải...' : 'Tải tất cả QR'}
+                            <Download size={14} /> {downloading ? 'Processing...' : 'Export All QR'}
                         </button>
                     )}
                     <button
                         onClick={addLocation}
-                        className="flex items-center gap-1 text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100"
+                        className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-orange-500 text-white px-5 py-2.5 rounded-xl hover:bg-orange-600 transition-all active:scale-95 shadow-[0_0_20px_rgba(249,115,22,0.2)]"
                     >
-                        <Plus size={16} /> Thêm điểm bán
+                        <Plus size={14} /> Thêm POS
                     </button>
                 </div>
             </div>
 
             {locations.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                    <Link2 size={32} className="mx-auto text-gray-300 mb-3" />
-                    <p className="text-gray-500 text-sm">Chưa có điểm bán nào</p>
-                    <button
-                        onClick={addLocation}
-                        className="mt-3 text-sm text-blue-600 hover:underline"
-                    >
-                        + Thêm điểm bán đầu tiên
-                    </button>
+                <div className="text-center py-20 bg-white/5 rounded-3xl border-2 border-dashed border-white/5 group">
+                    <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 text-white/10 group-hover:text-orange-500 transition-colors">
+                        <Link2 size={32} />
+                    </div>
+                    <p className="text-white/40 text-sm font-medium italic">Chưa có điểm bán nào được thiết lập.</p>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {locations.map((loc, index) => {
                         const link = generateLink(loc)
                         const hasDuplicate = isDuplicateCode(loc.code, index)
 
                         return (
-                            <div key={loc.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                            <div key={loc.id} className="bg-[#121212] rounded-[2rem] p-8 border border-white/5 shadow-2xl group hover:border-white/20 transition-all">
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
                                     {/* Code (POS ID) */}
                                     <div className="md:col-span-2">
-                                        <label className="block text-xs text-gray-500 mb-1">Mã POS *</label>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">Mã POS *</label>
                                         <input
                                             value={loc.code}
                                             onChange={e => updateLocation(index, { code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })}
-                                            placeholder="VD: HCM01"
-                                            className={`w-full border rounded px-2 py-1.5 text-sm font-mono uppercase ${hasDuplicate ? 'border-red-400 bg-red-50' : ''}`}
+                                            placeholder="HCM01"
+                                            className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono uppercase transition-all outline-none ${hasDuplicate ? 'border-red-500 text-red-400 bg-red-500/5' : 'border-white/10 text-white focus:border-orange-500'}`}
                                         />
-                                        {hasDuplicate && <p className="text-xs text-red-500 mt-1">Mã bị trùng!</p>}
+                                        {hasDuplicate && <p className="text-[9px] font-black text-red-500 mt-2 uppercase tracking-widest animate-pulse">Lỗi: Trùng mã!</p>}
                                     </div>
 
                                     {/* Name */}
                                     <div className="md:col-span-3">
-                                        <label className="block text-xs text-gray-500 mb-1">Tên địa điểm</label>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">Tên địa điểm</label>
                                         <input
                                             value={loc.name}
                                             onChange={e => updateLocation(index, { name: e.target.value })}
-                                            placeholder="VD: AEON Mall Tân Phú"
-                                            className="w-full border rounded px-2 py-1.5 text-sm"
+                                            placeholder="AEON Mall..."
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all"
                                         />
                                     </div>
 
                                     {/* Note */}
                                     <div className="md:col-span-3">
-                                        <label className="block text-xs text-gray-500 mb-1">Ghi chú</label>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">Ghi chú</label>
                                         <input
                                             value={loc.note || ''}
                                             onChange={e => updateLocation(index, { note: e.target.value })}
-                                            placeholder="Ghi chú nội bộ..."
-                                            className="w-full border rounded px-2 py-1.5 text-sm"
+                                            placeholder="..."
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60 focus:text-white outline-none transition-all placeholder:text-white/5"
                                         />
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="md:col-span-4 flex items-end gap-2 flex-wrap">
+                                    <div className="md:col-span-4 flex items-end justify-end gap-3 flex-wrap pt-6">
                                         <button
                                             onClick={() => copyLink(loc)}
                                             disabled={!loc.code}
-                                            className="flex items-center gap-1 text-xs bg-white border rounded px-2 py-1.5 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="Copy link"
+                                            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
+                                            title="Copy link tracking"
                                         >
-                                            {copied === loc.id ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-                                            {copied === loc.id ? 'Đã copy!' : 'Copy'}
+                                            {copied === loc.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                                            {copied === loc.id ? 'Copied' : 'Link'}
                                         </button>
                                         <button
                                             onClick={() => downloadQR(loc)}
                                             disabled={!loc.code}
-                                            className="flex items-center gap-1 text-xs bg-white border rounded px-2 py-1.5 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="Tải QR Code"
+                                            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
+                                            title="Download QR"
                                         >
-                                            <QrCode size={14} /> QR
+                                            <QrCode size={12} /> QR
                                         </button>
                                         <a
                                             href={link}
                                             target="_blank"
-                                            className={`flex items-center gap-1 text-xs bg-white border rounded px-2 py-1.5 hover:bg-gray-100 ${!loc.code ? 'opacity-50 pointer-events-none' : ''}`}
+                                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 transition-all ${!loc.code ? 'opacity-20 pointer-events-none' : ''}`}
                                         >
-                                            <ExternalLink size={14} /> Mở
+                                            <ExternalLink size={12} /> Live
                                         </a>
                                         <button
                                             onClick={() => removeLocation(index)}
-                                            className="flex items-center gap-1 text-xs text-red-500 bg-white border border-red-200 rounded px-2 py-1.5 hover:bg-red-50"
+                                            className="flex items-center justify-center bg-red-500/5 border border-red-500/10 text-red-500/40 hover:text-red-500 hover:bg-red-500/10 rounded-xl w-11 h-11 transition-all"
                                         >
-                                            <Trash2 size={14} />
+                                            <Trash2 size={16} />
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* Generated Link Preview */}
                                 {loc.code && (
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                        <p className="text-xs text-gray-400 mb-1">Link tracking:</p>
-                                        <code className="text-xs bg-white px-2 py-1 rounded border block overflow-x-auto">
+                                    <div className="mt-8 pt-6 border-t border-white/5">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="w-1 h-1 bg-orange-500 rounded-full" />
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-white/40">Generated tracking endpoint:</p>
+                                        </div>
+                                        <code className="text-[10px] font-mono bg-black/40 px-4 py-3 rounded-xl border border-white/5 block overflow-x-auto text-blue-400/80 whitespace-nowrap">
                                             {link}
                                         </code>
                                     </div>
@@ -245,8 +243,12 @@ export default function LocationManager({ clientSlug, locations, onChange }: Loc
                 </div>
             )}
 
-            <div className="bg-blue-50 text-blue-700 text-xs p-3 rounded-lg">
-                <strong>💡 Tip:</strong> Mỗi điểm bán sẽ có link riêng với tham số <code className="bg-blue-100 px-1 rounded">pos_id</code> và <code className="bg-blue-100 px-1 rounded">location</code>. Khi khách hàng truy cập từ link này, thông tin điểm bán sẽ tự động được ghi nhận vào lead.
+            <div className="bg-blue-500/5 border border-blue-500/10 text-blue-400 p-6 rounded-3xl flex gap-4">
+                <div className="mt-1"><Link2 size={18} className="text-blue-500" /></div>
+                <div>
+                    <strong className="text-[10px] font-black uppercase tracking-widest block mb-1">Architecture Tip:</strong>
+                    <p className="text-xs leading-relaxed opacity-60">Mỗi điểm bán sẽ có link tracking duy nhất với tham số <code className="bg-black/40 px-1.5 py-0.5 rounded text-blue-300">pos_id</code>. Hệ thống sẽ tự động gán dữ liệu khách hàng vào điểm bán tương ứng khi họ tham gia tương tác.</p>
+                </div>
             </div>
         </div>
     )
