@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Download, Share2, RotateCcw } from 'lucide-react'
 
+import { ResultScreenConfig } from '@/components/admin/ResultScreenEditor'
+
 interface ResultScreenProps {
     type: 'ar' | 'game'
     template: string
@@ -10,10 +12,11 @@ interface ResultScreenProps {
         imageUrl?: string
         message?: string
     }
+    config?: ResultScreenConfig
     onRestart?: () => void
 }
 
-export default function ResultScreen({ type, template, result, onRestart }: ResultScreenProps) {
+export default function ResultScreen({ type, template, result, config, onRestart }: ResultScreenProps) {
     const [sharing, setSharing] = useState(false)
 
     const handleDownload = async () => {
@@ -30,8 +33,8 @@ export default function ResultScreen({ type, template, result, onRestart }: Resu
         try {
             if (navigator.share) {
                 await navigator.share({
-                    title: 'POSMARS Experience',
-                    text: result?.message || 'Check out my experience!',
+                    title: config?.share_title || 'POSMARS Experience',
+                    text: config?.share_text || result?.message || 'Check out my experience!',
                     url: window.location.href
                 })
             } else {
@@ -51,9 +54,9 @@ export default function ResultScreen({ type, template, result, onRestart }: Resu
                 {type === 'game' && result?.prize && (
                     <>
                         <div className="text-6xl">🎉</div>
-                        <h2 className="text-2xl font-bold text-gray-900">Chúc mừng!</h2>
+                        <h2 className="text-2xl font-bold text-gray-900">{config?.title || 'Chúc mừng!'}</h2>
                         <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white py-4 px-6 rounded-xl">
-                            <p className="text-sm opacity-80">Bạn đã nhận được</p>
+                            <p className="text-sm opacity-80">{config?.success_message || 'Bạn đã nhận được'}</p>
                             <p className="text-2xl font-bold mt-1">{result.prize}</p>
                         </div>
                     </>
@@ -61,13 +64,26 @@ export default function ResultScreen({ type, template, result, onRestart }: Resu
 
                 {type === 'ar' && result?.imageUrl && (
                     <>
-                        <h2 className="text-xl font-bold text-gray-900">Ảnh của bạn</h2>
+                        <h2 className="text-xl font-bold text-gray-900">{config?.title || 'Ảnh của bạn'}</h2>
+                        {config?.success_message && <p className="text-gray-500 text-sm">{config.success_message}</p>}
                         <img src={result.imageUrl} alt="AR Result" className="w-full rounded-xl shadow-lg" />
                     </>
                 )}
 
+                {/* Optional CTA */}
+                {config?.cta_text && config?.cta_url && (
+                    <a
+                        href={config.cta_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block w-full bg-black text-white py-3 rounded-xl font-bold uppercase tracking-wide hover:bg-gray-800 transition"
+                    >
+                        {config.cta_text}
+                    </a>
+                )}
+
                 {/* Actions */}
-                <div className="flex gap-3 justify-center pt-4">
+                <div className="flex gap-3 justify-center pt-2">
                     {result?.imageUrl && (
                         <button
                             onClick={handleDownload}

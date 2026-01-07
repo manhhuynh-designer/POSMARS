@@ -129,13 +129,16 @@ export default function ClientPage() {
 
                             {/* AR: Image Tracking */}
                             {template === 'image_tracking' && (
-                                <ImageTracking
-                                    markerUrl={marker_url || template_config?.marker_url || ''}
-                                    modelUrl={asset_url || ''}
-                                    config={template_config || {}}
-                                    onComplete={() => handleInteractionComplete()}
-                                    onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}
-                                />
+                                <>
+                                    {console.log('🔍 ClientPage: Passing template_config to ImageTracking:', template_config)}
+                                    <ImageTracking
+                                        markerUrl={marker_url || template_config?.marker_url || ''}
+                                        modelUrl={asset_url || ''}
+                                        config={template_config || {}}
+                                        onComplete={() => handleInteractionComplete()}
+                                        onCapture={(imageUrl) => handleInteractionComplete({ imageUrl })}
+                                    />
+                                </>
                             )}
 
                             {/* AR: Check-in */}
@@ -172,6 +175,7 @@ export default function ClientPage() {
                     type={interaction_type}
                     template={template}
                     result={result}
+                    config={template_config?.result_config}
                     onRestart={handleRestart}
                 />
             )}

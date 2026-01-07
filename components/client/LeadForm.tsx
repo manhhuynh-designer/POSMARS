@@ -16,6 +16,15 @@ interface LeadFormConfig {
     fields: FormField[]
     submit_text: string
     consent_text: string
+
+    // Visual Customization
+    title?: string
+    description?: string
+    logo_url?: string
+    banner_url?: string
+    primary_color?: string
+    background_color?: string
+    text_color?: string
 }
 
 interface LeadFormProps {
@@ -72,24 +81,58 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
         }
     }
 
+    // Dynamic styles from config
+    const primaryColor = config.primary_color || '#f97316'
+    const backgroundColor = config.background_color || '#ffffff'
+    const textColor = config.text_color || '#1f2937'
+
     return (
-        <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center p-4">
-            <form onSubmit={handleSubmit} className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-4">
+        <div
+            className="min-h-screen flex items-center justify-center p-4"
+            style={{ backgroundColor }}
+        >
+            <form
+                onSubmit={handleSubmit}
+                className="w-full max-w-md rounded-2xl shadow-xl p-6 space-y-4"
+                style={{ backgroundColor, color: textColor }}
+            >
+                {/* Banner */}
+                {config.banner_url && (
+                    <img
+                        src={config.banner_url}
+                        alt="Banner"
+                        className="w-full rounded-xl mb-4 object-cover max-h-40"
+                    />
+                )}
+
+                {/* Logo & Header */}
                 <div className="text-center mb-6">
-                    <h2 className="text-xl font-bold text-gray-900">Đăng ký tham gia</h2>
-                    <p className="text-sm text-gray-500 mt-1">Điền thông tin để tiếp tục trải nghiệm</p>
+                    {config.logo_url && (
+                        <img
+                            src={config.logo_url}
+                            alt="Logo"
+                            className="h-16 mx-auto mb-4 object-contain"
+                        />
+                    )}
+                    <h2 className="text-xl font-bold" style={{ color: textColor }}>
+                        {config.title || 'Đăng ký tham gia'}
+                    </h2>
+                    <p className="text-sm mt-1 opacity-70">
+                        {config.description || 'Điền thông tin để tiếp tục trải nghiệm'}
+                    </p>
                 </div>
 
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
 
                 {config.fields.map(field => (
                     <div key={field.id}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                        <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>
+                            {field.label} {field.required && <span style={{ color: primaryColor }}>*</span>}
                         </label>
                         {field.type === 'select' && field.options ? (
                             <select
-                                className="w-full border rounded-lg p-3 focus:ring-2 focus:ring-orange-500"
+                                className="w-full border rounded-lg p-3"
+                                style={{ borderColor: primaryColor + '40' }}
                                 value={formData[field.id] || ''}
                                 onChange={e => handleChange(field.id, e.target.value)}
                             >
@@ -99,7 +142,8 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
                         ) : (
                             <input
                                 type={field.type}
-                                className="w-full border rounded-lg p-3 focus:ring-2 focus:ring-orange-500"
+                                className="w-full border rounded-lg p-3"
+                                style={{ borderColor: primaryColor + '40' }}
                                 value={formData[field.id] || ''}
                                 onChange={e => handleChange(field.id, e.target.value)}
                                 placeholder={field.placeholder}
@@ -109,11 +153,23 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
                 ))}
 
                 <div className="flex items-start gap-3 pt-2">
-                    <input type="checkbox" id="consent" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1 w-4 h-4" />
-                    <label htmlFor="consent" className="text-sm text-gray-600">{config.consent_text}</label>
+                    <input
+                        type="checkbox"
+                        id="consent"
+                        checked={consent}
+                        onChange={e => setConsent(e.target.checked)}
+                        className="mt-1 w-4 h-4"
+                        style={{ accentColor: primaryColor }}
+                    />
+                    <label htmlFor="consent" className="text-sm opacity-80">{config.consent_text}</label>
                 </div>
 
-                <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-4 rounded-xl font-bold text-lg disabled:opacity-50 shadow-lg">
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full text-white py-4 rounded-xl font-bold text-lg disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
+                    style={{ backgroundColor: primaryColor }}
+                >
                     {loading ? 'Đang gửi...' : config.submit_text}
                 </button>
             </form>

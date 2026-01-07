@@ -15,19 +15,48 @@ export interface LeadFormConfig {
     fields: FormField[]
     submit_text: string
     consent_text: string
+
+    // Visual Customization
+    title?: string
+    description?: string
+    logo_url?: string
+    banner_url?: string
+    primary_color?: string
+    background_color?: string
+    text_color?: string
 }
 
 interface LeadFormBuilderProps {
     initialConfig: LeadFormConfig
     onChange: (config: LeadFormConfig) => void
+    onUpload?: (file: File, path: string) => Promise<string | null>
 }
 
-export default function LeadFormBuilder({ initialConfig, onChange }: LeadFormBuilderProps) {
+export default function LeadFormBuilder({ initialConfig, onChange, onUpload }: LeadFormBuilderProps) {
     const [config, setConfig] = useState<LeadFormConfig>(initialConfig)
+    const [uploadingField, setUploadingField] = useState<string | null>(null)
 
     useEffect(() => {
         onChange(config)
     }, [config])
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'logo_url' | 'banner_url') => {
+        const file = e.target.files?.[0]
+        if (!file || !onUpload) return
+
+        try {
+            setUploadingField(field)
+            const url = await onUpload(file, `branding/${Date.now()}_${file.name}`)
+            if (url) {
+                setConfig({ ...config, [field]: url })
+            }
+            setUploadingField(null)
+        } catch (error) {
+            console.error('Upload failed:', error)
+            setUploadingField(null)
+            alert('Upload thất bại')
+        }
+    }
 
     const addField = () => {
         const newField: FormField = {
@@ -62,6 +91,145 @@ export default function LeadFormBuilder({ initialConfig, onChange }: LeadFormBui
 
     return (
         <div className="space-y-10">
+            {/* Brand Identity */}
+            <div className="bg-white/5 p-8 rounded-3xl border border-white/5 space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-white/40">
+                    🎨 Nhận diện thương hiệu
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Tiêu đề Form</label>
+                        <input
+                            value={config.title || ''}
+                            onChange={e => setConfig({ ...config, title: e.target.value })}
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all"
+                            placeholder="Đăng ký tham gia"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Mô tả</label>
+                        <input
+                            value={config.description || ''}
+                            onChange={e => setConfig({ ...config, description: e.target.value })}
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all"
+                            placeholder="Nhập thông tin để nhận quà..."
+                        />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Logo (Link hoặc Upload)</label>
+                        <div className="flex gap-3">
+                            <input
+                                value={config.logo_url || ''}
+                                onChange={e => setConfig({ ...config, logo_url: e.target.value })}
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all font-mono"
+                                placeholder="https://..."
+                            />
+                            {onUpload && (
+                                <div className="relative">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={e => handleFileUpload(e, 'logo_url')}
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        disabled={uploadingField === 'logo_url'}
+                                    />
+                                    <button className={`h-full px-4 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-bold uppercase tracking-widest ${uploadingField === 'logo_url' ? 'animate-pulse' : ''}`}>
+                                        {uploadingField === 'logo_url' ? '...' : 'Upload'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {config.logo_url && (
+                            <div className="w-24 h-24 bg-black/40 rounded-2xl border border-white/10 p-2 flex items-center justify-center overflow-hidden">
+                                <img src={config.logo_url} alt="Logo Preview" className="max-w-full max-h-full object-contain" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="space-y-4">
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Banner (Link hoặc Upload)</label>
+                        <div className="flex gap-3">
+                            <input
+                                value={config.banner_url || ''}
+                                onChange={e => setConfig({ ...config, banner_url: e.target.value })}
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500 outline-none transition-all font-mono"
+                                placeholder="https://..."
+                            />
+                            {onUpload && (
+                                <div className="relative">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={e => handleFileUpload(e, 'banner_url')}
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        disabled={uploadingField === 'banner_url'}
+                                    />
+                                    <button className={`h-full px-4 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-bold uppercase tracking-widest ${uploadingField === 'banner_url' ? 'animate-pulse' : ''}`}>
+                                        {uploadingField === 'banner_url' ? '...' : 'Upload'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {config.banner_url && (
+                            <div className="w-full h-24 bg-black/40 rounded-2xl border border-white/10 overflow-hidden">
+                                <img src={config.banner_url} alt="Banner Preview" className="w-full h-full object-cover" />
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Màu chính (Primary)</label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="color"
+                                value={config.primary_color || '#f97316'}
+                                onChange={e => setConfig({ ...config, primary_color: e.target.value })}
+                                className="w-10 h-10 rounded-lg border border-white/10 cursor-pointer"
+                            />
+                            <input
+                                value={config.primary_color || '#f97316'}
+                                onChange={e => setConfig({ ...config, primary_color: e.target.value })}
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-mono focus:border-orange-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Màu nền (Background)</label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="color"
+                                value={config.background_color || '#ffffff'}
+                                onChange={e => setConfig({ ...config, background_color: e.target.value })}
+                                className="w-10 h-10 rounded-lg border border-white/10 cursor-pointer"
+                            />
+                            <input
+                                value={config.background_color || '#ffffff'}
+                                onChange={e => setConfig({ ...config, background_color: e.target.value })}
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-mono focus:border-orange-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">Màu chữ (Text)</label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="color"
+                                value={config.text_color || '#1f2937'}
+                                onChange={e => setConfig({ ...config, text_color: e.target.value })}
+                                className="w-10 h-10 rounded-lg border border-white/10 cursor-pointer"
+                            />
+                            <input
+                                value={config.text_color || '#1f2937'}
+                                onChange={e => setConfig({ ...config, text_color: e.target.value })}
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-mono focus:border-orange-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* General Settings */}
             <div className="bg-white/5 p-8 rounded-3xl border border-white/5 space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3 text-white/40">

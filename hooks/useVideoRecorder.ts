@@ -39,16 +39,18 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
     const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const isRecordingRef = useRef(false)
 
-    // Get supported mimeType
+    // Get supported mimeType - prioritize MP4 for better compatibility
     const getSupportedMimeType = (): string => {
         const types = [
+            'video/mp4;codecs=avc1.42E01E,mp4a.40.2', // H.264 + AAC (best compatibility)
+            'video/mp4',
             'video/webm;codecs=vp9',
             'video/webm;codecs=vp8',
             'video/webm',
-            'video/mp4',
         ]
         for (const type of types) {
             if (MediaRecorder.isTypeSupported(type)) {
+                console.log('📹 Using codec:', type)
                 return type
             }
         }
@@ -65,15 +67,18 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
         }
         chunksRef.current = []
 
-        // Create composite canvas
+        // CRITICAL: Use AR canvas resolution as base (this is what A-Frame renders at)
+        // The AR canvas contains the correctly positioned AR elements
         const compositeCanvas = document.createElement('canvas')
-        compositeCanvas.width = video.videoWidth || 1280
-        compositeCanvas.height = video.videoHeight || 720
+        compositeCanvas.width = arCanvas.width || 1280
+        compositeCanvas.height = arCanvas.height || 720
         const ctx = compositeCanvas.getContext('2d')!
         compositeCanvasRef.current = compositeCanvas
 
-        // Start compositing loop
-        isRecordingRef.current = true
+        console.log('📹 Recording: AR Canvas size:', arCanvas.width, 'x', arCanvas.height)
+        console.log('📹 Recording: Video size:', video.videoWidth, 'x', video.videoHeight)
+        console.log('📹 Recording: Composite size:', compositeCanvas.width, 'x', compositeCanvas.height)
+
         // Start compositing loop
         isRecordingRef.current = true
         const drawFrame = () => {
@@ -82,18 +87,40 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
             // Clear canvas
             ctx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height)
 
-            // 1. Draw video background (conditionally mirrored)
+            // 1. Draw video background - scale to COVER the composite canvas
+            // This ensures no black bars and video fills the frame
+            const videoAspect = video.videoWidth / video.videoHeight
+            const canvasAspect = compositeCanvas.width / compositeCanvas.height
+
+            let drawWidth = compositeCanvas.width
+            let drawHeight = compositeCanvas.height
+            let drawX = 0
+            let drawY = 0
+
+            // Scale video to cover (crop if needed)
+            if (videoAspect > canvasAspect) {
+                // Video is wider - fit height, crop width
+                drawHeight = compositeCanvas.height
+                drawWidth = compositeCanvas.height * videoAspect
+                drawX = (compositeCanvas.width - drawWidth) / 2
+            } else {
+                // Video is taller - fit width, crop height
+                drawWidth = compositeCanvas.width
+                drawHeight = compositeCanvas.width / videoAspect
+                drawY = (compositeCanvas.height - drawHeight) / 2
+            }
+
             ctx.save()
             if (mirror) {
-                // Flip horizontally for selfie mode
                 ctx.translate(compositeCanvas.width, 0)
                 ctx.scale(-1, 1)
             }
-            ctx.drawImage(video, 0, 0, compositeCanvas.width, compositeCanvas.height)
+            ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight)
             ctx.restore()
 
-            // 2. Draw AR overlay (NEVER mirrored manually here, as MindAR already mirrors the canvas for face mode)
-            ctx.drawImage(arCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height)
+            // 2. Draw AR overlay at EXACTLY 1:1 - no scaling
+            // This preserves the correct AR element positions
+            ctx.drawImage(arCanvas, 0, 0)
 
             animationFrameRef.current = requestAnimationFrame(drawFrame)
         }
@@ -187,7 +214,7 @@ export function useVideoRecorder(options: VideoRecorderOptions = {}): VideoRecor
 
         const a = document.createElement('a')
         a.href = recordedVideoUrl
-        a.download = filename || `ar-video-${Date.now()}.webm`
+        a.download = filename || `ar-video-${Date.now()}.mp4`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)

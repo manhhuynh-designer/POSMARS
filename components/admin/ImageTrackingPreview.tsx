@@ -201,12 +201,13 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         console.log('🚀 Image Tracking: initAR() called, markerUrl:', markerUrl, 'facingMode:', facingMode)
 
         const scene = document.createElement('a-scene')
-        // mindar-image system uses camera from navigator.mediaDevices.getUserMedia
-        // Improved sensitivity: missTolerance: 10; warmupTolerance: 1; filterMinCF:0.01; filterBeta: 10 (Responsive)
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.01; filterBeta: 10; missTolerance: 10; warmupTolerance: 1`)
+        // Smoothing filters: Must match Client settings for consistent preview
+        // filterMinCF: 0.00001 (very low = smooth), filterBeta: 0.001 (very low = very stable)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
-        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true')
+        // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true; preserveDrawingBuffer: true')
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
         scene.classList.add('w-full', 'h-full')
@@ -227,20 +228,76 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         camera.setAttribute('raycaster', 'objects: .clickable')
         scene.appendChild(camera)
 
-        // Lights
+        // Lights - must match Client settings exactly
+        console.log('💡 Admin Lights: ambient_intensity:', config.ambient_intensity, '-> applying:', config.ambient_intensity ?? 1.0)
+        console.log('💡 Admin Lights: directional_intensity:', config.directional_intensity, '-> applying:', config.directional_intensity ?? 0.5)
+
         const ambient = document.createElement('a-light')
         ambient.setAttribute('type', 'ambient')
-        ambient.setAttribute('intensity', (config.ambient_intensity ?? 1).toString())
+        ambient.setAttribute('intensity', (config.ambient_intensity ?? 1.0).toString())
         scene.appendChild(ambient)
 
         const directional = document.createElement('a-light')
         directional.setAttribute('type', 'directional')
-        directional.setAttribute('position', '0.5 1 1')
-        directional.setAttribute('intensity', (config.directional_intensity ?? 1).toString())
+        directional.setAttribute('position', '0 10 10') // Same as Client
+        directional.setAttribute('intensity', (config.directional_intensity ?? 0.5).toString()) // Same default as Client
         scene.appendChild(directional)
 
-        // Note: Environment map (HDR) is NOT used in AR mode as it would block camera
-        // Use Studio Mode to preview with HDR environment
+        // HDR Environment Map for Image-Based Lighting (IBL)
+        // This only affects lighting/reflections, NOT the background (camera stays visible)
+        if (config.environment_url) {
+            console.log('🌅 Admin HDR: Loading environment map:', config.environment_url)
+
+            // Wait for scene to be ready, then apply HDR
+            scene.addEventListener('loaded', async () => {
+                try {
+                    const THREE = (window as any).THREE
+                    if (!THREE) {
+                        console.warn('⚠️ Admin HDR: THREE not available')
+                        return
+                    }
+
+                    // Check if RGBELoader is available
+                    let RGBELoader = THREE.RGBELoader
+                    if (!RGBELoader) {
+                        // Try to load RGBELoader dynamically
+                        console.log('🌅 Admin HDR: Loading RGBELoader...')
+                        const script = document.createElement('script')
+                        script.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js'
+                        await new Promise((resolve, reject) => {
+                            script.onload = resolve
+                            script.onerror = reject
+                            document.head.appendChild(script)
+                        })
+                        RGBELoader = THREE.RGBELoader
+                    }
+
+                    if (!RGBELoader) {
+                        console.warn('⚠️ Admin HDR: RGBELoader not available')
+                        return
+                    }
+
+                    const loader = new RGBELoader()
+                    loader.load(config.environment_url!, (hdrTexture: any) => {
+                        hdrTexture.mapping = THREE.EquirectangularReflectionMapping
+
+                        // Get the Three.js scene from A-Frame
+                        const threeScene = (scene as any).object3D
+                        if (threeScene) {
+                            // Set environment for IBL (lighting/reflections)
+                            threeScene.environment = hdrTexture
+                            // Keep background null for AR (camera feed visible)
+                            threeScene.background = null
+                            console.log('✅ Admin HDR: Environment map applied for IBL')
+                        }
+                    }, undefined, (error: any) => {
+                        console.error('❌ Admin HDR: Failed to load environment map:', error)
+                    })
+                } catch (error) {
+                    console.error('❌ Admin HDR: Error setting up environment map:', error)
+                }
+            })
+        }
 
         // Target Entity
         const targetEntity = document.createElement('a-entity')

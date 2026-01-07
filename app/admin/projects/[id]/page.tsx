@@ -5,13 +5,14 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Save, ExternalLink, Upload, BarChart2, Settings } from 'lucide-react'
 import Link from 'next/link'
 import LeadFormBuilder from '@/components/admin/LeadFormBuilder'
+import ResultScreenEditor from '@/components/admin/ResultScreenEditor'
 import TemplateConfigBuilder from '@/components/admin/TemplateConfigBuilder'
 import CustomCodeEditor from '@/components/admin/CustomCodeEditor'
 import LocationManager from '@/components/admin/LocationManager'
 import { getSubdomainUrl, getPathUrl } from '@/lib/utils/url'
 import { generateCodeFromConfig } from '@/lib/templates/default-templates'
 
-type Tab = 'basic' | 'lead_form' | 'template' | 'locations' | 'analytics'
+type Tab = 'basic' | 'lead_form' | 'template' | 'result_screen' | 'locations' | 'analytics'
 
 const TEMPLATE_NAMES: Record<string, string> = {
     image_tracking: 'Image Tracking',
@@ -208,8 +209,8 @@ export default function EditProjectPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 mb-10 bg-white/5 p-1.5 rounded-2xl border border-white/5 backdrop-blur-md">
-                {(['basic', 'lead_form', 'template', 'locations', 'analytics'] as Tab[]).map(tab => (
+            <div className="flex gap-2 mb-10 bg-white/5 p-1.5 rounded-2xl border border-white/5 backdrop-blur-md overflow-x-auto">
+                {(['basic', 'lead_form', 'template', 'result_screen', 'locations', 'analytics'] as Tab[]).map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -220,8 +221,9 @@ export default function EditProjectPage() {
                     >
                         {tab === 'basic' ? 'Cơ bản' :
                             tab === 'lead_form' ? 'Lead Form' :
-                                tab === 'locations' ? 'Điểm bán' :
-                                    tab === 'analytics' ? 'Analytics' : 'Visual Build'}
+                                tab === 'result_screen' ? 'Kết quả' :
+                                    tab === 'locations' ? 'Điểm bán' :
+                                        tab === 'analytics' ? 'Analytics' : 'Visual Build'}
                     </button>
                 ))}
             </div>
@@ -316,12 +318,29 @@ export default function EditProjectPage() {
                         <LeadFormBuilder
                             initialConfig={formData.lead_form_config}
                             onChange={config => setFormData({ ...formData, lead_form_config: config })}
+                            onUpload={async (file, path) => await uploadFile(file, path)}
                         />
                     </div>
                 )}
 
+                {activeTab === 'result_screen' && (
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-1.5 h-6 bg-green-500 rounded-full" />
+                            <h3 className="font-black text-white uppercase tracking-tighter">Cấu hình Màn hình Kết quả</h3>
+                        </div>
+                        <ResultScreenEditor
+                            initialConfig={formData.template_config?.result_config}
+                            onChange={config => setFormData({
+                                ...formData,
+                                template_config: { ...formData.template_config, result_config: config }
+                            })}
+                        />
+                    </div>
+                )}
 
                 {/* Assets tab removed - consolidated into TemplateConfigBuilder */}
+                {/* Result Screen tab logic above */}
 
                 {activeTab === 'template' && (
                     <div className="space-y-8">

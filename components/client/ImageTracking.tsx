@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, X, RotateCcw, Check, Download, Video, Square } from 'lucide-react'
+import { Camera, X, RotateCcw, Check, Download, Video, Square, Share2 } from 'lucide-react'
 import { useVideoRecorder } from '@/hooks/useVideoRecorder'
 
 interface AnimationStep {
@@ -99,6 +99,15 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             animation_mode: 'auto'
         }
     ]
+
+    useEffect(() => {
+        console.log('🚀 ImageTracking: Config received:', config);
+        console.log('🚀 ImageTracking: Final Assets:', finalAssets);
+        console.log('🚀 ImageTracking: Ambient:', config.ambient_intensity, 'Directional:', config.directional_intensity);
+        if (finalAssets.length > 0 && finalAssets[0].keyframes) {
+            console.log('🚀 ImageTracking: First asset keyframes:', finalAssets[0].keyframes);
+        }
+    }, [config]);
 
     // Video recording hook
     const {
@@ -231,30 +240,87 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         }
 
         const scene = document.createElement('a-scene')
-        // Added smoothing filters: filterMinCF:0.01; filterBeta: 10 (Responsive)
-        // Improved sensitivity: missTolerance: 10; warmupTolerance: 1
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.01; filterBeta: 10; missTolerance: 10; warmupTolerance: 1`)
+        // Smoothing filters: Lower filterBeta = MORE stabilization (less jitter)
+        // filterMinCF: 0.0001 (very low = smooth), filterBeta: 0.001 (very low = very stable)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
-        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true')
+        // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true; preserveDrawingBuffer: true')
 
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
         // Lights
+        console.log('💡 Lights: ambient_intensity from config:', config.ambient_intensity, '-> applying:', config.ambient_intensity ?? 1.0)
+        console.log('💡 Lights: directional_intensity from config:', config.directional_intensity, '-> applying:', config.directional_intensity ?? 0.5)
+
         const ambientLight = document.createElement('a-light')
         ambientLight.setAttribute('type', 'ambient')
-        ambientLight.setAttribute('intensity', (config.ambient_intensity || 1.0).toString())
+        ambientLight.setAttribute('intensity', (config.ambient_intensity ?? 1.0).toString())
         scene.appendChild(ambientLight)
 
         const directionalLight = document.createElement('a-light')
         directionalLight.setAttribute('type', 'directional')
         directionalLight.setAttribute('position', '0 10 10')
-        directionalLight.setAttribute('intensity', (config.directional_intensity || 0.5).toString())
+        directionalLight.setAttribute('intensity', (config.directional_intensity ?? 0.5).toString())
         scene.appendChild(directionalLight)
 
-        // Note: Environment map (HDR) is NOT used in AR mode - it would block camera
-        // HDR environment is only visible in Studio Mode preview
+        // HDR Environment Map for Image-Based Lighting (IBL)
+        // This only affects lighting/reflections, NOT the background (camera stays visible)
+        if (config.environment_url) {
+            console.log('🌅 HDR: Loading environment map:', config.environment_url)
+
+            // Wait for scene to be ready, then apply HDR
+            scene.addEventListener('loaded', async () => {
+                try {
+                    const THREE = (window as any).THREE
+                    if (!THREE) {
+                        console.warn('⚠️ HDR: THREE not available')
+                        return
+                    }
+
+                    // Check if RGBELoader is available (from aframe-extras or manual load)
+                    let RGBELoader = THREE.RGBELoader
+                    if (!RGBELoader) {
+                        // Try to load RGBELoader dynamically
+                        console.log('🌅 HDR: Loading RGBELoader...')
+                        const script = document.createElement('script')
+                        script.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js'
+                        await new Promise((resolve, reject) => {
+                            script.onload = resolve
+                            script.onerror = reject
+                            document.head.appendChild(script)
+                        })
+                        RGBELoader = THREE.RGBELoader
+                    }
+
+                    if (!RGBELoader) {
+                        console.warn('⚠️ HDR: RGBELoader not available')
+                        return
+                    }
+
+                    const loader = new RGBELoader()
+                    loader.load(config.environment_url!, (hdrTexture: any) => {
+                        hdrTexture.mapping = THREE.EquirectangularReflectionMapping
+
+                        // Get the Three.js scene from A-Frame
+                        const threeScene = (scene as any).object3D
+                        if (threeScene) {
+                            // Set environment for IBL (lighting/reflections)
+                            threeScene.environment = hdrTexture
+                            // Keep background null for AR (camera feed visible)
+                            threeScene.background = null
+                            console.log('✅ HDR: Environment map applied for IBL')
+                        }
+                    }, undefined, (error: any) => {
+                        console.error('❌ HDR: Failed to load environment map:', error)
+                    })
+                } catch (error) {
+                    console.error('❌ HDR: Error setting up environment map:', error)
+                }
+            })
+        }
 
         const camera = document.createElement('a-camera')
         camera.setAttribute('position', '0 0 0')
@@ -425,8 +491,21 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             setLoading(false)
         })
 
-        targetEntity.addEventListener('targetFound', () => {
+        targetEntity.addEventListener('targetFound', (e) => {
+            // Prevent infinite loop: only process if event originated from targetEntity itself
+            if (e.target !== targetEntity) return
+
+            console.log('🎯 targetFound: triggering animations on all child entities')
             setScanning(false)
+
+            // Manually emit 'targetFound' to ALL child entities so animations trigger
+            // Using bubbles=false to prevent event from bubbling back up
+            const children = targetEntity.querySelectorAll('*')
+            children.forEach((child: Element) => {
+                if ((child as any).emit) {
+                    (child as any).emit('targetFound', null, false)
+                }
+            })
         })
 
         targetEntity.addEventListener('targetLost', () => {
@@ -472,36 +551,132 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         }, 2000)
     }
 
+    const handleShare = async () => {
+        if (!recordedVideoUrl) return
+
+        try {
+            const response = await fetch(recordedVideoUrl)
+            const blob = await response.blob()
+            const file = new File([blob], `ar-video-${Date.now()}.webm`, { type: blob.type })
+
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: 'My AR Experience',
+                    text: 'Check out my AR video!',
+                })
+            } else {
+                // Fallback to download if sharing not supported
+                downloadRecording()
+                alert('Trình duyệt không hỗ trợ chia sẻ file. Bản ghi đã được tải về máy.')
+            }
+        } catch (error) {
+            console.error('Share failed:', error)
+            alert('Không thể chia sẻ video.')
+        }
+    }
+
+    const handlePhotoShare = async () => {
+        if (!capturedImage) return
+
+        try {
+            const response = await fetch(capturedImage)
+            const blob = await response.blob()
+            const file = new File([blob], `ar-photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
+
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: 'My AR Experience',
+                    text: 'Check out my AR photo!',
+                })
+            } else {
+                handleDownload()
+                alert('Trình duyệt không hỗ trợ chia sẻ ảnh. Ảnh đã được tải về máy.')
+            }
+        } catch (error) {
+            console.error('Photo share failed:', error)
+            alert('Không thể chia sẻ ảnh.')
+        }
+    }
+
     const handleCapture = async () => {
         try {
             const video = document.querySelector('video') as HTMLVideoElement
-            const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+
+            // Get AR canvas from A-Frame renderer (more reliable)
+            const scene = document.querySelector('a-scene') as any
+            let arCanvas: HTMLCanvasElement | null = null
+
+            if (scene && scene.renderer && scene.renderer.domElement) {
+                arCanvas = scene.renderer.domElement as HTMLCanvasElement
+            } else {
+                // Fallback to querySelector
+                arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+            }
 
             if (!video || !arCanvas) {
-                console.error('Cannot find video or AR canvas')
+                console.error('Cannot find video or AR canvas', { video: !!video, arCanvas: !!arCanvas })
                 return
             }
 
-            // Use video native resolution for best quality
-            const videoWidth = video.videoWidth || 1920
-            const videoHeight = video.videoHeight || 1080
+            console.log('📸 Capture: Video size:', video.videoWidth, 'x', video.videoHeight)
+            console.log('📸 Capture: AR Canvas size:', arCanvas.width, 'x', arCanvas.height)
 
-            // Create high-resolution composite canvas
+            // CRITICAL: Force a render before capturing to ensure the buffer is populated
+            if (scene && scene.renderer && scene.object3D) {
+                const cameraEl = scene.querySelector('a-camera') || scene.querySelector('[camera]')
+                const threeCamera = cameraEl?.object3D?.children?.[0] || scene.camera?.object3D
+                if (threeCamera) {
+                    scene.renderer.render(scene.object3D, threeCamera)
+                    console.log('📸 Capture: Forced render before capture')
+                }
+            }
+
+            // CRITICAL: Use AR canvas resolution as base (this is what A-Frame renders at)
+            const canvasWidth = arCanvas.width || 1280
+            const canvasHeight = arCanvas.height || 720
+
+            // Create composite canvas at AR canvas resolution
             const canvas = document.createElement('canvas')
-            canvas.width = videoWidth
-            canvas.height = videoHeight
+            canvas.width = canvasWidth
+            canvas.height = canvasHeight
             const ctx = canvas.getContext('2d')!
 
-            // Draw video frame at full resolution (background)
-            ctx.drawImage(video, 0, 0, videoWidth, videoHeight)
+            // Draw video background - scale to COVER the canvas (no black bars)
+            const videoWidth = video.videoWidth || 1920
+            const videoHeight = video.videoHeight || 1080
+            const videoAspect = videoWidth / videoHeight
+            const canvasAspect = canvasWidth / canvasHeight
 
-            // Draw AR canvas overlay - scale to match video resolution
-            ctx.drawImage(arCanvas, 0, 0, videoWidth, videoHeight)
+            let drawWidth = canvasWidth
+            let drawHeight = canvasHeight
+            let drawX = 0
+            let drawY = 0
+
+            // Scale video to cover
+            if (videoAspect > canvasAspect) {
+                // Video is wider - fit height, crop width
+                drawHeight = canvasHeight
+                drawWidth = canvasHeight * videoAspect
+                drawX = (canvasWidth - drawWidth) / 2
+            } else {
+                // Video is taller - fit width, crop height
+                drawWidth = canvasWidth
+                drawHeight = canvasWidth / videoAspect
+                drawY = (canvasHeight - drawHeight) / 2
+            }
+
+            ctx.drawImage(video, drawX, drawY, drawWidth, drawHeight)
+
+            // Draw AR canvas overlay at EXACTLY 1:1 - preserves AR element positions
+            ctx.drawImage(arCanvas, 0, 0)
 
             // Convert to base64 at high quality
             const imageData = canvas.toDataURL('image/jpeg', 0.95)
             setCapturedImage(imageData)
             setCaptured(true)
+            console.log('📸 Capture success!')
         } catch (e) {
             console.error('Capture failed:', e)
         }
@@ -587,7 +762,13 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                             <button
                                 onClick={() => {
                                     const video = document.querySelector('video') as HTMLVideoElement
-                                    const arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+                                    const scene = document.querySelector('a-scene') as any
+                                    let arCanvas: HTMLCanvasElement | null = null
+                                    if (scene && scene.renderer && scene.renderer.domElement) {
+                                        arCanvas = scene.renderer.domElement
+                                    } else {
+                                        arCanvas = document.querySelector('a-scene canvas') as HTMLCanvasElement
+                                    }
                                     if (video && arCanvas) startRecording(video, arCanvas)
                                 }}
                                 className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-4 border-red-300 active:scale-95 transition-transform"
@@ -618,33 +799,46 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             {/* Video Preview */}
             {showVideoPreview && recordedVideoUrl && (
                 <div className="absolute inset-0 bg-black z-30 flex flex-col">
-                    <div className="flex-1 flex items-center justify-center p-4">
+                    {/* Video container - maximizes space */}
+                    <div className="flex-1 relative flex items-center justify-center overflow-hidden">
                         <video
                             src={recordedVideoUrl}
                             controls
                             autoPlay
                             loop
-                            className="max-w-full max-h-full rounded-lg shadow-2xl"
+                            playsInline
+                            className="w-full h-full object-contain shadow-2xl"
                         />
                     </div>
-                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
-                        <div className="flex items-center justify-center gap-4">
+
+                    {/* Action Buttons - Always visible at bottom */}
+                    <div className="p-8 pb-12 bg-gradient-to-t from-black via-black/95 to-transparent">
+                        <div className="flex items-center justify-center gap-4 max-w-sm mx-auto">
                             <button
                                 onClick={() => {
                                     clearRecording()
                                     setShowVideoPreview(false)
                                 }}
-                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium"
+                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
                             >
                                 <RotateCcw size={20} />
-                                Quay lại
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Làm lại</span>
                             </button>
+
                             <button
                                 onClick={() => downloadRecording()}
-                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold"
+                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
                             >
                                 <Download size={20} />
-                                Tải về
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Lưu về</span>
+                            </button>
+
+                            <button
+                                onClick={handleShare}
+                                className="flex flex-col items-center gap-2 bg-orange-500 text-white flex-1 py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/20 active:scale-95 transition"
+                            >
+                                <Share2 size={24} />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Chia sẻ</span>
                             </button>
                         </div>
                     </div>
@@ -654,38 +848,40 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             {/* Captured Image Preview */}
             {captured && capturedImage && (
                 <div className="absolute inset-0 bg-black z-30 flex flex-col">
-                    <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="flex-1 relative flex items-center justify-center overflow-hidden">
                         <img
                             src={capturedImage}
                             alt="Captured AR"
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                            className="w-full h-full object-contain shadow-2xl"
                         />
                     </div>
 
                     {/* Preview Actions */}
-                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
-                        <div className="flex items-center justify-center gap-4">
+                    <div className="p-8 pb-12 bg-gradient-to-t from-black via-black/95 to-transparent">
+                        <div className="flex items-center justify-center gap-4 max-w-sm mx-auto">
                             <button
                                 onClick={handleRetake}
-                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition"
+                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
                             >
                                 <RotateCcw size={20} />
-                                Chụp lại
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Chụp lại</span>
                             </button>
+
                             <button
-                                onClick={handleDownload}
-                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition"
+                                onClick={handlePhotoShare}
+                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
                             >
-                                <Download size={20} />
-                                Tải về
+                                <Share2 size={20} />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Chia sẻ</span>
                             </button>
+
                             {onCapture && (
                                 <button
                                     onClick={handleConfirm}
-                                    className="flex items-center gap-2 bg-orange-500 text-white px-8 py-3 rounded-full font-bold hover:bg-orange-600 transition"
+                                    className="flex flex-col items-center gap-2 bg-orange-500 text-white flex-1 py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/20 active:scale-95 transition"
                                 >
-                                    <Check size={20} />
-                                    Xác nhận
+                                    <Check size={24} />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest">Xác nhận</span>
                                 </button>
                             )}
                         </div>
