@@ -225,47 +225,54 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             });
         }
 
-        // Always register/overwrite custom component for Occlusion Material to ensure latest logic
-        (window as any).AFRAME.registerComponent('occlusion-material', {
-            schema: { debug: { default: false } },
-            init: function () {
-                this.el.addEventListener('model-loaded', this.update.bind(this));
-                this.el.addEventListener('loaded', this.update.bind(this));
-                // Try immediate update
-                if (this.el.getObject3D('mesh')) {
-                    this.update();
-                }
-            },
-            update: function () {
-                var mesh = this.el.getObject3D('mesh');
-                var debug = this.data.debug;
-                const THREE = (window as any).THREE;
-
-                if (!mesh || !THREE) { return; }
-
-                mesh.traverse(function (node: any) {
-                    if (node.isMesh) {
-                        if (debug) {
-                            // Debug mode: Red transparent
-                            node.material = new THREE.MeshBasicMaterial({
-                                color: 0xff0000,
-                                opacity: 0.5,
-                                transparent: true,
-                                side: THREE.DoubleSide
-                            });
-                        } else {
-                            // Production mode: Invisible occluder
-                            node.material = new THREE.MeshBasicMaterial({
-                                colorWrite: false,
-                                depthWrite: true,
-                                side: THREE.DoubleSide
-                            });
-                        }
-                        node.renderOrder = -1; // Ensure it renders before other objects
+        // Register occlusion-material component only if not already registered
+        if (!(window as any).AFRAME.components['occlusion-material']) {
+            (window as any).AFRAME.registerComponent('occlusion-material', {
+                schema: { debug: { default: false } },
+                init: function () {
+                    console.log('🛡️ occlusion-material INIT on element:', this.el.tagName, this.el.id);
+                    this.el.addEventListener('model-loaded', this.update.bind(this));
+                    this.el.addEventListener('loaded', this.update.bind(this));
+                    // Try immediate update
+                    if (this.el.getObject3D('mesh')) {
+                        console.log('🛡️ Mesh already exists on init');
+                        this.update();
                     }
-                });
-            }
-        });
+                },
+                update: function () {
+                    var mesh = this.el.getObject3D('mesh');
+                    var debug = this.data.debug;
+                    const THREE = (window as any).THREE;
+
+                    console.log('🛡️ occlusion-material UPDATE:', { hasMesh: !!mesh, hasTHREE: !!THREE, debug });
+
+                    if (!mesh || !THREE) { return; }
+
+                    mesh.traverse(function (node: any) {
+                        if (node.isMesh) {
+                            console.log('🛡️ Applying material to mesh node:', node.name || 'unnamed');
+                            if (debug) {
+                                // Debug mode: Red transparent
+                                node.material = new THREE.MeshBasicMaterial({
+                                    color: 0xff0000,
+                                    opacity: 0.5,
+                                    transparent: true,
+                                    side: THREE.DoubleSide
+                                });
+                            } else {
+                                // Production mode: Invisible occluder
+                                node.material = new THREE.MeshBasicMaterial({
+                                    colorWrite: false,
+                                    depthWrite: true,
+                                    side: THREE.DoubleSide
+                                });
+                            }
+                            node.renderOrder = -1; // Ensure it renders before other objects
+                        }
+                    });
+                }
+            });
+        }
 
         const oldScene = document.querySelector('a-scene')
         if (oldScene) {
@@ -289,7 +296,8 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
-        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true; preserveDrawingBuffer: true')
+        // sortObjects: true is required for renderOrder-based occlusion to work
+        scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true; preserveDrawingBuffer: true; sortObjects: true')
 
         scene.setAttribute('vr-mode-ui', 'enabled: false')
         scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
@@ -427,6 +435,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 let model: HTMLElement;
 
                 if (isPrimitiveOcclusion) {
+                    console.log('🛡️ Creating Primitive Occlusion:', asset.id, asset.occlusion_shape)
                     model = document.createElement('a-entity');
                     if (asset.occlusion_shape === 'cube') {
                         model.setAttribute('geometry', 'primitive: box');
@@ -863,50 +872,52 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 </div>
             )}
 
-            {/* Video Preview */}
+            {/* Video Preview Dialog */}
             {showVideoPreview && recordedVideoUrl && (
-                <div className="fixed inset-0 bg-black z-50 flex flex-col">
-                    {/* Video container - properly sized */}
-                    <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-                        <video
-                            src={recordedVideoUrl}
-                            controls
-                            autoPlay
-                            loop
-                            playsInline
-                            className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
-                        />
-                    </div>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#1a1a1b] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-white/10">
+                        {/* Video container */}
+                        <div className="relative aspect-[9/16] bg-black">
+                            <video
+                                src={recordedVideoUrl}
+                                controls
+                                autoPlay
+                                loop
+                                playsInline
+                                className="w-full h-full object-contain"
+                            />
+                        </div>
 
-                    {/* Action Buttons - Fixed at bottom */}
-                    <div className="flex-shrink-0 p-6 pb-8 bg-gradient-to-t from-black via-black/95 to-transparent">
-                        <div className="flex items-center justify-center gap-4 max-w-sm mx-auto">
-                            <button
-                                onClick={() => {
-                                    clearRecording()
-                                    setShowVideoPreview(false)
-                                }}
-                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
-                            >
-                                <RotateCcw size={20} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Làm lại</span>
-                            </button>
+                        {/* Action Buttons */}
+                        <div className="p-4 bg-gradient-to-t from-black/50 to-transparent">
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={() => {
+                                        clearRecording()
+                                        setShowVideoPreview(false)
+                                    }}
+                                    className="flex items-center gap-2 bg-white/10 text-white px-4 py-3 rounded-xl font-medium hover:bg-white/20 transition active:scale-95"
+                                >
+                                    <RotateCcw size={18} />
+                                    <span className="text-xs font-bold uppercase">Làm lại</span>
+                                </button>
 
-                            <button
-                                onClick={() => downloadRecording()}
-                                className="flex flex-col items-center gap-2 bg-white/10 text-white min-w-[80px] py-4 rounded-2xl font-medium hover:bg-white/20 transition active:scale-95"
-                            >
-                                <Download size={20} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Lưu về</span>
-                            </button>
+                                <button
+                                    onClick={() => downloadRecording()}
+                                    className="flex items-center gap-2 bg-white/10 text-white px-4 py-3 rounded-xl font-medium hover:bg-white/20 transition active:scale-95"
+                                >
+                                    <Download size={18} />
+                                    <span className="text-xs font-bold uppercase">Lưu về</span>
+                                </button>
 
-                            <button
-                                onClick={handleShare}
-                                className="flex flex-col items-center gap-2 bg-orange-500 text-white flex-1 py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/20 active:scale-95 transition"
-                            >
-                                <Share2 size={24} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Chia sẻ</span>
-                            </button>
+                                <button
+                                    onClick={handleShare}
+                                    className="flex items-center gap-2 bg-orange-500 text-white px-5 py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 active:scale-95 transition"
+                                >
+                                    <Share2 size={18} />
+                                    <span className="text-xs font-bold uppercase">Chia sẻ</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

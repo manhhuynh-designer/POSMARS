@@ -289,38 +289,44 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
                 </div>
             )}
 
-            {/* Video Preview Modal */}
+            {/* Video Preview Dialog */}
             {showVideoPreview && recordedVideoUrl && (
-                <div className="fixed inset-0 bg-black z-50 flex flex-col">
-                    <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-                        <video
-                            src={recordedVideoUrl}
-                            controls
-                            autoPlay
-                            loop
-                            playsInline
-                            className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
-                        />
-                    </div>
-                    <div className="flex-shrink-0 p-6 pb-8 bg-gradient-to-t from-black via-black/95 to-transparent">
-                        <div className="flex items-center justify-center gap-4">
-                            <button
-                                onClick={() => {
-                                    clearRecording()
-                                    setShowVideoPreview(false)
-                                }}
-                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition active:scale-95"
-                            >
-                                <X size={20} />
-                                Hủy
-                            </button>
-                            <button
-                                onClick={() => downloadRecording()}
-                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold shadow-lg active:scale-95 transition"
-                            >
-                                <Download size={20} />
-                                Tải về
-                            </button>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#1a1a1b] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-white/10">
+                        {/* Video container */}
+                        <div className="relative aspect-[9/16] bg-black">
+                            <video
+                                src={recordedVideoUrl}
+                                controls
+                                autoPlay
+                                loop
+                                playsInline
+                                className="w-full h-full object-contain"
+                            />
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="p-4 bg-gradient-to-t from-black/50 to-transparent">
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={() => {
+                                        clearRecording()
+                                        setShowVideoPreview(false)
+                                    }}
+                                    className="flex items-center gap-2 bg-white/10 text-white px-4 py-3 rounded-xl font-medium hover:bg-white/20 transition active:scale-95"
+                                >
+                                    <X size={18} />
+                                    <span className="text-xs font-bold uppercase">Hủy</span>
+                                </button>
+
+                                <button
+                                    onClick={() => downloadRecording()}
+                                    className="flex items-center gap-2 bg-green-500 text-white px-5 py-3 rounded-xl font-bold shadow-lg active:scale-95 transition"
+                                >
+                                    <Download size={18} />
+                                    <span className="text-xs font-bold uppercase">Tải về</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

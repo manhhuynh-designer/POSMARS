@@ -181,47 +181,49 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             });
         }
 
-        // Always register/overwrite custom component for Occlusion Material
-        (window as any).AFRAME.registerComponent('occlusion-material', {
-            schema: { debug: { default: false } },
-            init: function () {
-                this.el.addEventListener('model-loaded', this.update.bind(this));
-                this.el.addEventListener('loaded', this.update.bind(this));
-                // Try immediate update
-                if (this.el.getObject3D('mesh')) {
-                    this.update();
-                }
-            },
-            update: function () {
-                var mesh = this.el.getObject3D('mesh');
-                var debug = this.data.debug;
-                const THREE = (window as any).THREE;
-
-                if (!mesh || !THREE) { return; }
-
-                mesh.traverse(function (node: any) {
-                    if (node.isMesh) {
-                        if (debug) {
-                            // Debug mode: Red transparent
-                            node.material = new THREE.MeshBasicMaterial({
-                                color: 0xff0000,
-                                opacity: 0.5,
-                                transparent: true,
-                                side: THREE.DoubleSide
-                            });
-                        } else {
-                            // Production mode: Invisible occluder
-                            node.material = new THREE.MeshBasicMaterial({
-                                colorWrite: false,
-                                depthWrite: true,
-                                side: THREE.DoubleSide
-                            });
-                        }
-                        node.renderOrder = -1; // Ensure it renders before other objects
+        // Register occlusion-material component only if not already registered
+        if (!(window as any).AFRAME.components['occlusion-material']) {
+            (window as any).AFRAME.registerComponent('occlusion-material', {
+                schema: { debug: { default: false } },
+                init: function () {
+                    this.el.addEventListener('model-loaded', this.update.bind(this));
+                    this.el.addEventListener('loaded', this.update.bind(this));
+                    // Try immediate update
+                    if (this.el.getObject3D('mesh')) {
+                        this.update();
                     }
-                });
-            }
-        });
+                },
+                update: function () {
+                    var mesh = this.el.getObject3D('mesh');
+                    var debug = this.data.debug;
+                    const THREE = (window as any).THREE;
+
+                    if (!mesh || !THREE) { return; }
+
+                    mesh.traverse(function (node: any) {
+                        if (node.isMesh) {
+                            if (debug) {
+                                // Debug mode: Red transparent
+                                node.material = new THREE.MeshBasicMaterial({
+                                    color: 0xff0000,
+                                    opacity: 0.5,
+                                    transparent: true,
+                                    side: THREE.DoubleSide
+                                });
+                            } else {
+                                // Production mode: Invisible occluder
+                                node.material = new THREE.MeshBasicMaterial({
+                                    colorWrite: false,
+                                    depthWrite: true,
+                                    side: THREE.DoubleSide
+                                });
+                            }
+                            node.renderOrder = -1; // Ensure it renders before other objects
+                        }
+                    });
+                }
+            });
+        }
 
         // Cleanup existing if any
         if (sceneRef.current) {
