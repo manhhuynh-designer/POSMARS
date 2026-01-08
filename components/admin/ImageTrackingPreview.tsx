@@ -181,6 +181,48 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             });
         }
 
+        // Always register/overwrite custom component for Occlusion Material
+        (window as any).AFRAME.registerComponent('occlusion-material', {
+            schema: { debug: { default: false } },
+            init: function () {
+                this.el.addEventListener('model-loaded', this.update.bind(this));
+                this.el.addEventListener('loaded', this.update.bind(this));
+                // Try immediate update
+                if (this.el.getObject3D('mesh')) {
+                    this.update();
+                }
+            },
+            update: function () {
+                var mesh = this.el.getObject3D('mesh');
+                var debug = this.data.debug;
+                const THREE = (window as any).THREE;
+
+                if (!mesh || !THREE) { return; }
+
+                mesh.traverse(function (node: any) {
+                    if (node.isMesh) {
+                        if (debug) {
+                            // Debug mode: Red transparent
+                            node.material = new THREE.MeshBasicMaterial({
+                                color: 0xff0000,
+                                opacity: 0.5,
+                                transparent: true,
+                                side: THREE.DoubleSide
+                            });
+                        } else {
+                            // Production mode: Invisible occluder
+                            node.material = new THREE.MeshBasicMaterial({
+                                colorWrite: false,
+                                depthWrite: true,
+                                side: THREE.DoubleSide
+                            });
+                        }
+                        node.renderOrder = -1; // Ensure it renders before other objects
+                    }
+                });
+            }
+        });
+
         // Cleanup existing if any
         if (sceneRef.current) {
             const oldScene = sceneRef.current
@@ -305,7 +347,10 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
 
         // Add Assets
         config.assets?.forEach(asset => {
-            if (!asset.url) return
+            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+
+            // Allow render if it has URL OR if it is a primitive occlusion shape
+            if (!asset.url && !isPrimitiveOcclusion) return
 
             console.log(`🎬 AR Asset ${asset.name}: keyframes =`, asset.keyframes?.length || 0, asset.keyframes)
 
@@ -405,8 +450,33 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     videoEl.pause()
                 })
             } else {
-                el = document.createElement('a-gltf-model')
-                el.setAttribute('src', asset.url)
+
+                // Handle Primitive Occlusion Shapes
+                if (asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model') {
+                    el = document.createElement('a-entity')
+
+                    if (asset.occlusion_shape === 'cube') {
+                        el.setAttribute('geometry', 'primitive: box')
+                    } else if (asset.occlusion_shape === 'sphere') {
+                        el.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32')
+                    } else if (asset.occlusion_shape === 'plane') {
+                        el.setAttribute('geometry', 'primitive: plane')
+                    }
+
+                    el.setAttribute('occlusion-material', 'debug: false')
+                }
+                // Handle GLTF Models (3D Models & Occlusion Custom Models)
+                else {
+                    el = document.createElement('a-gltf-model')
+                    el.setAttribute('src', asset.url)
+
+                    if (asset.type === 'occlusion') {
+                        el.setAttribute('occlusion-material', 'debug: false')
+                    } else {
+                        // Initialize opacity for normal 3D models only
+                        el.setAttribute('model-opacity', '1')
+                    }
+                }
 
                 // Pro Mixer Keyframes for 3D Models (Option B)
                 if (asset.keyframes && asset.keyframes.length > 0) {
@@ -421,7 +491,12 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                             const animName = `animation__kf_${prop}_${idx}`;
                             const prevKf = kfsForProp[idx - 1];
                             let propertyName = prop;
-                            if (prop === 'opacity') propertyName = 'model-opacity';
+
+                            // Handle opacity animation differently for occlusion vs normal
+                            if (prop === 'opacity') {
+                                if (asset.type === 'occlusion') return; // Skip opacity for occlusion
+                                propertyName = 'model-opacity';
+                            }
 
                             let startEvents = 'targetFound';
                             if (idx > 0) {
@@ -447,10 +522,6 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                             el.setAttribute(animName, animValue)
                         });
                     });
-
-                    // Initialize opacity
-                    el.setAttribute('model-opacity', '1')
-
                 }
             }
 

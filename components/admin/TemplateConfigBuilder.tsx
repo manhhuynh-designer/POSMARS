@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import {
-    Plus, Trash2, GripVertical, Upload, Image as ImageIcon, Eye,
+    Plus, Trash2, GripVertical, Upload, Image as ImageIcon, Eye, EyeOff,
     Settings, Layers, Video, Box, Activity, ChevronRight, HelpCircle,
     RefreshCw, Play, SkipForward, Sun, Maximize, Smartphone,
     Camera, Check, Sparkles, Loader2, Clock, Minus
@@ -53,26 +53,27 @@ export interface VideoKeyframe {
 export interface ARAsset {
     id: string
     name: string
-    type: '3d' | 'video'
+    type: '3d' | 'video' | 'occlusion'
     url: string
     scale: number
     position: [number, number, number]
     rotation: [number, number, number]
-    // Video settings
-    video_width?: number
-    video_height?: number
     video_autoplay?: boolean
     video_loop?: boolean
     video_muted?: boolean
+    video_width?: number // Aspect ratio width (relative to height=1)
+    video_height?: number
+    keyframes?: VideoKeyframe[]
+    animation_duration?: number
+    loop_animation?: boolean
+    occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane'
+
     // 3D Animation settings
     animation_mode?: 'auto' | 'loop_clips' | 'tap_to_play'
     enable_tap_animation?: boolean
+
     // Sequential Animation
     steps?: AnimationStep[]
-    loop_animation?: boolean
-    // Video Keyframes (Option B)
-    keyframes?: VideoKeyframe[]
-    animation_duration?: number
 }
 
 export interface ImageTrackingConfig {
@@ -1118,17 +1119,18 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         const selectedAsset = config.assets?.find((a: ARAsset) => a.id === selectedAssetId)
         const [timelineZoom, setTimelineZoom] = useState(100)
 
-        const addAsset = (type: '3d' | 'video') => {
+        const addAsset = (type: '3d' | 'video' | 'occlusion') => {
             const newAsset: ARAsset = {
                 id: `asset-${Date.now()}`,
-                name: type === '3d' ? 'New 3D Model' : 'New Video',
+                name: type === '3d' ? 'New 3D Model' : (type === 'occlusion' ? 'New Occlusion' : 'New Video'),
                 type,
                 url: '',
                 scale: 1,
                 position: [0, 0, 0],
                 rotation: [0, 0, 0],
                 video_autoplay: true,
-                video_loop: true
+                video_loop: true,
+                occlusion_shape: 'model'
             }
             const updatedAssets = [...(config.assets || []), newAsset]
             setConfig({ ...config, assets: updatedAssets })
@@ -1213,6 +1215,12 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 >
                                     <Plus size={14} /> Video
                                 </button>
+                                <button
+                                    onClick={() => addAsset('occlusion')}
+                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
+                                >
+                                    <Plus size={14} /> Occlusion
+                                </button>
                             </div>
                         </div>
 
@@ -1229,16 +1237,16 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-xl shadow-2xl transition-transform group-hover:scale-110 ${asset.type === '3d' ? 'bg-blue-600' : 'bg-purple-600'
+                                                <div className={`p-2.5 rounded-xl shadow-2xl transition-transform group-hover:scale-110 ${asset.type === '3d' ? 'bg-blue-600' : (asset.type === 'occlusion' ? 'bg-red-600' : 'bg-purple-600')
                                                     } text-white`}>
-                                                    {asset.type === '3d' ? <Box size={16} /> : <Video size={16} />}
+                                                    {asset.type === '3d' ? <Box size={16} /> : (asset.type === 'occlusion' ? <EyeOff size={16} /> : <Video size={16} />)}
                                                 </div>
                                                 <div>
                                                     <p className={`text-sm font-black uppercase tracking-tighter truncate max-w-[150px] ${selectedAssetId === asset.id ? 'text-orange-500' : 'text-white/60 group-hover:text-white'}`}>
                                                         {asset.name}
                                                     </p>
                                                     <div className="flex items-center gap-2 mt-0.5">
-                                                        <span className={`text-[8px] px-2 py-0.5 rounded-md font-black uppercase tracking-[0.2em] ${asset.type === '3d' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                                                        <span className={`text-[8px] px-2 py-0.5 rounded-md font-black uppercase tracking-[0.2em] ${asset.type === '3d' ? 'bg-blue-500/20 text-blue-400' : (asset.type === 'occlusion' ? 'bg-red-500/20 text-red-400' : 'bg-purple-500/20 text-purple-400')
                                                             } border border-white/5`}>
                                                             {asset.type}
                                                         </span>
@@ -1384,81 +1392,111 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                 {/* TAB: Content Specific */}
                                 {activeTab === 'content' && (
                                     <div className="space-y-8 animate-in fade-in duration-300">
-                                        {/* File Upload / Link */}
-                                        <div className="bg-black/40 p-8 rounded-3xl border border-white/5 space-y-6 shadow-inner">
-                                            <div className="flex items-center justify-between">
-                                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
-                                                    Nguồn {selectedAsset.type === '3d' ? '3D Model (.glb)' : 'Video (.mp4/.webm)'}
-                                                </label>
-                                                {selectedAsset.url && <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 flex items-center gap-1 uppercase tracking-widest"><Check size={10} /> ĐÃ UPLOAD</span>}
-                                            </div>
-                                            <div className="flex gap-3">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Dán URL file ở đây hoặc nhấn nút Upload..."
-                                                    value={selectedAsset.url}
-                                                    onChange={(e) => updateAsset(selectedAsset.id, { url: e.target.value })}
-                                                    className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all shadow-xl placeholder:text-white/5"
-                                                />
-                                                <label className={`bg-orange-600 text-white p-4 rounded-2xl cursor-pointer hover:bg-orange-500 active:scale-95 transition-all shadow-2xl shadow-orange-900/40 border border-white/10 ${uploadingField === 'content' ? 'opacity-50 pointer-events-none' : ''}`}>
-                                                    {uploadingField === 'content' ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
-                                                    <input
-                                                        type="file"
-                                                        disabled={uploadingField === 'content'}
-                                                        className="hidden"
-                                                        accept={selectedAsset.type === '3d' ? '.glb' : '.mp4,.webm,.webp'}
-                                                        onChange={async (e) => {
-                                                            const file = e.target.files?.[0]
-                                                            const url = await handleFileUpload(e, 'temp_url', 'content')
-                                                            if (url && file) {
-                                                                // Use filename if asset name is default
-                                                                const currentAssetName = selectedAsset.name
-                                                                const isDefaultName = currentAssetName === 'New 3D Model' || currentAssetName === 'New Video'
-                                                                const newName = isDefaultName ? file.name : currentAssetName
-
-                                                                // Auto-detect video dimensions
-                                                                if (selectedAsset.type === 'video') {
-                                                                    const videoEl = document.createElement('video')
-                                                                    videoEl.src = URL.createObjectURL(file)
-                                                                    videoEl.onloadedmetadata = () => {
-                                                                        const aspectRatio = videoEl.videoWidth / videoEl.videoHeight
-                                                                        updateAsset(selectedAsset.id, {
-                                                                            url,
-                                                                            name: newName,
-                                                                            video_width: parseFloat(aspectRatio.toFixed(2)),
-                                                                            video_height: 1
-                                                                        })
-                                                                        URL.revokeObjectURL(videoEl.src)
-                                                                    }
-                                                                } else {
-                                                                    updateAsset(selectedAsset.id, { url, name: newName })
-                                                                }
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
-                                            </div>
-
-
-                                            {/* Preview Player for Video */}
-                                            {selectedAsset.type === 'video' && selectedAsset.url && (
-                                                <div className="mt-6 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black ring-1 ring-white/5">
-                                                    <div className="bg-[#1a1a1a] px-5 py-3 border-b border-white/5 flex justify-between items-center text-white/60">
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Video Preview</span>
-                                                        <Video size={14} />
-                                                    </div>
-                                                    <video
-                                                        src={selectedAsset.url}
-                                                        controls
-                                                        className="w-full max-h-[300px] object-contain"
-                                                        crossOrigin="anonymous"
-                                                        playsInline
-                                                    >
-                                                        Your browser does not support the video tag.
-                                                    </video>
+                                        {/* Occlusion Shape Selector */}
+                                        {selectedAsset.type === 'occlusion' && (
+                                            <div className="bg-black/40 p-6 rounded-3xl border border-white/5 space-y-4 shadow-inner">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
+                                                        Geometry Type
+                                                    </label>
                                                 </div>
-                                            )}
-                                        </div>
+                                                <div className="grid grid-cols-4 gap-2">
+                                                    {['model', 'cube', 'sphere', 'plane'].map((type) => (
+                                                        <button
+                                                            key={type}
+                                                            onClick={() => updateAsset(selectedAsset.id, { occlusion_shape: type as any })}
+                                                            className={`
+                                                                py-3 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all
+                                                                ${(selectedAsset.occlusion_shape || 'model') === type
+                                                                    ? 'bg-orange-500 border-orange-500 text-white shadow-lg'
+                                                                    : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10 hover:border-white/10'
+                                                                }
+                                                            `}
+                                                        >
+                                                            {type}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* File Upload / Link - Only for Model type or non-occlusion */}
+                                        {((selectedAsset.type !== 'occlusion') || ((selectedAsset.occlusion_shape || 'model') === 'model')) && (
+                                            <div className="bg-black/40 p-8 rounded-3xl border border-white/5 space-y-6 shadow-inner">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
+                                                        Nguồn {(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '3D Model (.glb)' : 'Video (.mp4/.webm)'}
+                                                    </label>
+                                                    {selectedAsset.url && <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 flex items-center gap-1 uppercase tracking-widest"><Check size={10} /> ĐÃ UPLOAD</span>}
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Dán URL file ở đây hoặc nhấn nút Upload..."
+                                                        value={selectedAsset.url}
+                                                        onChange={(e) => updateAsset(selectedAsset.id, { url: e.target.value })}
+                                                        className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-2xl px-6 py-4 text-sm text-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all shadow-xl placeholder:text-white/5"
+                                                    />
+                                                    <label className={`bg-orange-600 text-white p-4 rounded-2xl cursor-pointer hover:bg-orange-500 active:scale-95 transition-all shadow-2xl shadow-orange-900/40 border border-white/10 ${uploadingField === 'content' ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                        {uploadingField === 'content' ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
+                                                        <input
+                                                            type="file"
+                                                            disabled={uploadingField === 'content'}
+                                                            className="hidden"
+                                                            accept={(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '.glb' : '.mp4,.webm,.webp'}
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0]
+                                                                const url = await handleFileUpload(e, 'temp_url', 'content')
+                                                                if (url && file) {
+                                                                    // Use filename if asset name is default
+                                                                    const currentAssetName = selectedAsset.name
+                                                                    const isDefaultName = currentAssetName === 'New 3D Model' || currentAssetName === 'New Video' || currentAssetName === 'New Occlusion'
+                                                                    const newName = isDefaultName ? file.name : currentAssetName
+
+                                                                    // Auto-detect video dimensions
+                                                                    if (selectedAsset.type === 'video') {
+                                                                        const videoEl = document.createElement('video')
+                                                                        videoEl.src = URL.createObjectURL(file)
+                                                                        videoEl.onloadedmetadata = () => {
+                                                                            const aspectRatio = videoEl.videoWidth / videoEl.videoHeight
+                                                                            updateAsset(selectedAsset.id, {
+                                                                                url,
+                                                                                name: newName,
+                                                                                video_width: parseFloat(aspectRatio.toFixed(2)),
+                                                                                video_height: 1
+                                                                            })
+                                                                            URL.revokeObjectURL(videoEl.src)
+                                                                        }
+                                                                    } else {
+                                                                        updateAsset(selectedAsset.id, { url, name: newName })
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+
+
+                                                {/* Preview Player for Video */}
+                                                {selectedAsset.type === 'video' && selectedAsset.url && (
+                                                    <div className="mt-6 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black ring-1 ring-white/5">
+                                                        <div className="bg-[#1a1a1a] px-5 py-3 border-b border-white/5 flex justify-between items-center text-white/60">
+                                                            <span className="text-[10px] font-black uppercase tracking-widest">Video Preview</span>
+                                                            <Video size={14} />
+                                                        </div>
+                                                        <video
+                                                            src={selectedAsset.url}
+                                                            controls
+                                                            className="w-full max-h-[300px] object-contain"
+                                                            crossOrigin="anonymous"
+                                                            playsInline
+                                                        >
+                                                            Your browser does not support the video tag.
+                                                        </video>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
                                         {/* Video Specific Settings */}
                                         {selectedAsset.type === 'video' && (
@@ -1906,6 +1944,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         ) : (
                                             <StudioPreview
                                                 config={config}
+                                                debugMode={debugMode}
                                                 onClose={() => setShowPreview(false)}
                                             />
                                         )}

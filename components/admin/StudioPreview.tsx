@@ -1,7 +1,7 @@
 'use client'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Grid, useVideoTexture, Html, Environment } from '@react-three/drei'
-import { Suspense, useRef, useState, useEffect } from 'react'
+import { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { Box, Loader2, Move, RotateCcw, Play, Pause } from 'lucide-react'
 import { ImageTrackingConfig, ARAsset, VideoKeyframe } from './TemplateConfigBuilder'
@@ -9,6 +9,7 @@ import { interpolateKeyframes, getKeyframeDuration } from '@/lib/animation-utils
 
 interface StudioPreviewProps {
     config: ImageTrackingConfig
+    debugMode?: boolean
     onClose: () => void
 }
 
@@ -17,6 +18,155 @@ interface AnimationState {
     isPlaying: boolean
     currentTime: number
     startTimestamp: number
+}
+
+// Occlusion GLTF Component
+function OcclusionGLTF({ asset, debugMode }: { asset: ARAsset; debugMode: boolean }) {
+    // Only load if url exists (handled by parent logic)
+    const { scene } = useGLTF(asset.url!)
+    const clonedScene = useState(() => scene.clone())[0]
+
+    useEffect(() => {
+        clonedScene.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                const mesh = child as THREE.Mesh
+                if (debugMode) {
+                    mesh.material = new THREE.MeshBasicMaterial({
+                        color: 0xff0000,
+                        opacity: 0.3,
+                        transparent: true,
+                        side: THREE.DoubleSide,
+                        depthWrite: true // Keep depth write for correct sorting
+                    })
+                } else {
+                    mesh.material = new THREE.MeshBasicMaterial({
+                        colorWrite: false,
+                        depthWrite: true,
+                        side: THREE.DoubleSide
+                    })
+                }
+            }
+        })
+    }, [debugMode, clonedScene])
+
+    return <primitive object={clonedScene} />
+}
+
+// Occlusion Primitive Component
+function OcclusionPrimitive({ asset, debugMode }: { asset: ARAsset; debugMode: boolean }) {
+    const shape = asset.occlusion_shape || 'cube'
+
+    // Memoize material to avoid recreation on every render
+    const material = useMemo(() => {
+        console.log('🔴 OcclusionPrimitive: Creating material, debugMode:', debugMode, 'shape:', shape)
+        if (debugMode) {
+            return new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                opacity: 0.3,
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: true
+            })
+        } else {
+            return new THREE.MeshBasicMaterial({
+                colorWrite: false,
+                depthWrite: true,
+                side: THREE.DoubleSide
+            })
+        }
+    }, [debugMode, shape])
+
+    return (
+        <mesh material={material} renderOrder={-1}>
+            {shape === 'cube' && <boxGeometry args={[1, 1, 1]} />}
+            {shape === 'sphere' && <sphereGeometry args={[0.5, 32, 32]} />}
+            {shape === 'plane' && <planeGeometry args={[1, 1]} />}
+        </mesh>
+    )
+}
+
+// Wrapper Occlusion Model Component
+function OcclusionModel({ asset, animState, debugMode }: { asset: ARAsset; animState: AnimationState; debugMode: boolean }) {
+    const ref = useRef<THREE.Group>(null)
+
+    const duration = asset.animation_duration || getKeyframeDuration(asset.keyframes || []) || 5
+    const keyframes = asset.keyframes || []
+    const loop = asset.loop_animation !== false
+
+    useFrame(() => {
+        if (!ref.current || keyframes.length === 0) return
+        if (!animState.isPlaying) return
+
+        const elapsed = (performance.now() - animState.startTimestamp) / 1000
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+            position: asset.position,
+            rotation: asset.rotation,
+            scale: [asset.scale, asset.scale, asset.scale],
+            opacity: 1
+        })
+
+        // DEBUG LOG
+        if (Math.round(elapsed) % 2 === 0 && Math.random() < 0.05) {
+            console.log('Occlusion Anim:', {
+                id: asset.id,
+                pos: values.position,
+                kfs: keyframes.length,
+                playing: animState.isPlaying
+            })
+        }
+
+        ref.current.position.set(...values.position)
+        ref.current.rotation.set(
+            values.rotation[0] * Math.PI / 180,
+            values.rotation[1] * Math.PI / 180,
+            values.rotation[2] * Math.PI / 180
+        )
+        ref.current.scale.set(...values.scale)
+
+        // Apply opacity (mainly for debug visualization of fade)
+        if (debugMode) {
+            ref.current.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                    const mesh = child as THREE.Mesh
+                    const opacity = values.opacity ?? 1
+                    const baseOpacity = 0.3
+                    const effectiveOpacity = baseOpacity * opacity
+
+                    if (Array.isArray(mesh.material)) {
+                        mesh.material.forEach(m => {
+                            m.opacity = effectiveOpacity
+                        })
+                    } else {
+                        mesh.material.opacity = effectiveOpacity
+                    }
+                }
+            })
+        }
+    })
+
+    // Initial transform (if no animation)
+    useEffect(() => {
+        if (ref.current && keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale, asset.scale, asset.scale)
+        }
+    }, [asset.position, asset.rotation, asset.scale, keyframes.length])
+
+    const isPrimitive = asset.occlusion_shape && asset.occlusion_shape !== 'model'
+
+    return (
+        <group ref={ref}>
+            {isPrimitive
+                ? <OcclusionPrimitive asset={asset} debugMode={debugMode} />
+                : (asset.url ? <OcclusionGLTF asset={asset} debugMode={debugMode} /> : null)
+            }
+        </group>
+    )
 }
 
 // GLTF Model Component with keyframe animation
@@ -59,7 +209,7 @@ function Model({ asset, animState }: { asset: ARAsset; animState: AnimationState
                         m.transparent = true
                         m.opacity = opacity
                     })
-                } else if (mesh.material) {
+                } else {
                     mesh.material.transparent = true
                     mesh.material.opacity = opacity
                 }
@@ -67,33 +217,32 @@ function Model({ asset, animState }: { asset: ARAsset; animState: AnimationState
         })
     })
 
-    // Initial transform (before animation starts or if no keyframes)
-    const initialPos = asset.position
-    const initialRot = asset.rotation.map(d => d * Math.PI / 180) as [number, number, number]
-    const initialScale = asset.scale
+    // Initial transform (if no animation)
+    useEffect(() => {
+        if (ref.current && keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale, asset.scale, asset.scale)
+        }
+    }, [asset.position, asset.rotation, asset.scale, keyframes.length])
 
-    return (
-        <primitive
-            ref={ref}
-            object={scene.clone()}
-            position={initialPos}
-            rotation={initialRot}
-            scale={[initialScale, initialScale, initialScale]}
-        />
-    )
+    return <primitive object={scene} ref={ref} />
 }
 
 // Video Plane Component with keyframe animation
 function VideoPlane({ asset, animState }: { asset: ARAsset; animState: AnimationState }) {
     const ref = useRef<THREE.Mesh>(null)
     const texture = useVideoTexture(asset.url, {
-        loop: asset.video_loop !== false,
-        muted: asset.video_muted !== false,
+        unsuspend: 'canplay',
+        muted: asset.video_muted ?? false,
+        loop: asset.video_loop ?? true,
         start: true
     })
 
-    const width = asset.video_width || 1
-    const height = asset.video_height || 0.56
     const duration = asset.animation_duration || getKeyframeDuration(asset.keyframes || []) || 5
     const keyframes = asset.keyframes || []
     const loop = asset.loop_animation !== false
@@ -110,34 +259,47 @@ function VideoPlane({ asset, animState }: { asset: ARAsset; animState: Animation
             opacity: 1
         })
 
-        if (ref.current) {
-            ref.current.position.set(...values.position)
-            ref.current.rotation.set(
-                values.rotation[0] * Math.PI / 180,
-                values.rotation[1] * Math.PI / 180,
-                values.rotation[2] * Math.PI / 180
-            )
-            const s = values.scale[0]
-            ref.current.scale.set(s, s, s)
+        ref.current.position.set(...values.position)
+        ref.current.rotation.set(
+            values.rotation[0] * Math.PI / 180,
+            values.rotation[1] * Math.PI / 180,
+            values.rotation[2] * Math.PI / 180
+        )
+        // Maintain aspect ratio for video
+        const ratio = (asset.video_width || 1) / (asset.video_height || 1)
+        ref.current.scale.set(values.scale[0] * ratio, values.scale[1], values.scale[2])
 
-            // Update opacity
-            if (ref.current.material) {
-                const mat = ref.current.material as THREE.Material
-                mat.opacity = values.opacity ?? 1
-                // console.log('VideoPlane opacity:', mat.opacity)
-                mat.transparent = true
-                mat.needsUpdate = true
-            }
+        // Apply opacity
+        const opacity = values.opacity ?? 1
+        if (Array.isArray(ref.current.material)) {
+            ref.current.material.forEach(m => {
+                m.transparent = true
+                m.opacity = opacity
+            })
+        } else {
+            ref.current.material.transparent = true
+            ref.current.material.opacity = opacity
         }
     })
 
-    const initialPos = asset.position
-    const initialRot = asset.rotation.map(d => d * Math.PI / 180) as [number, number, number]
+    // Initial transform (if no animation)
+    useEffect(() => {
+        if (ref.current && keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            const ratio = (asset.video_width || 1) / (asset.video_height || 1)
+            ref.current.scale.set(asset.scale * ratio, asset.scale, asset.scale)
+        }
+    }, [asset.position, asset.rotation, asset.scale, asset.video_width, asset.video_height, keyframes.length])
 
     return (
-        <mesh ref={ref} position={initialPos} rotation={initialRot} scale={asset.scale}>
-            <planeGeometry args={[width, height]} />
-            <meshBasicMaterial map={texture} side={THREE.DoubleSide} toneMapped={false} transparent opacity={1} />
+        <mesh ref={ref}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial map={texture} toneMapped={false} transparent side={THREE.DoubleSide} />
         </mesh>
     )
 }
@@ -147,14 +309,14 @@ function Loader() {
     return (
         <Html center>
             <div className="flex flex-col items-center gap-2">
-                <Loader2 className="animate-spin text-orange-500" size={32} />
-                <p className="text-white/60 text-xs font-bold">Loading...</p>
+                <Loader2 size={32} className="animate-spin text-orange-500" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Loading Asset...</span>
             </div>
         </Html>
     )
 }
 
-export default function StudioPreview({ config, onClose }: StudioPreviewProps) {
+export default function StudioPreview({ config, debugMode = false, onClose }: StudioPreviewProps) {
     const [animState, setAnimState] = useState<AnimationState>({
         isPlaying: true,
         currentTime: 0,
@@ -220,7 +382,12 @@ export default function StudioPreview({ config, onClose }: StudioPreviewProps) {
 
                     {/* Assets */}
                     {config.assets?.map(asset => {
-                        if (!asset.url) return null
+                        const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+                        if (!asset.url && !isPrimitiveOcclusion) return null
+
+                        if (asset.type === 'occlusion') {
+                            return <OcclusionModel key={asset.id} asset={asset} animState={animState} debugMode={debugMode} />
+                        }
 
                         return asset.type === '3d' ? (
                             <Model key={asset.id} asset={asset} animState={animState} />

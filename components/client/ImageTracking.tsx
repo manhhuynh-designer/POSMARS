@@ -22,7 +22,8 @@ interface VideoKeyframe {
 interface ARAsset {
     id: string
     name: string
-    type: '3d' | 'video'
+    type: '3d' | 'video' | 'occlusion'
+    occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane'
     url: string
     scale: number
     position: [number, number, number]
@@ -224,6 +225,48 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             });
         }
 
+        // Always register/overwrite custom component for Occlusion Material to ensure latest logic
+        (window as any).AFRAME.registerComponent('occlusion-material', {
+            schema: { debug: { default: false } },
+            init: function () {
+                this.el.addEventListener('model-loaded', this.update.bind(this));
+                this.el.addEventListener('loaded', this.update.bind(this));
+                // Try immediate update
+                if (this.el.getObject3D('mesh')) {
+                    this.update();
+                }
+            },
+            update: function () {
+                var mesh = this.el.getObject3D('mesh');
+                var debug = this.data.debug;
+                const THREE = (window as any).THREE;
+
+                if (!mesh || !THREE) { return; }
+
+                mesh.traverse(function (node: any) {
+                    if (node.isMesh) {
+                        if (debug) {
+                            // Debug mode: Red transparent
+                            node.material = new THREE.MeshBasicMaterial({
+                                color: 0xff0000,
+                                opacity: 0.5,
+                                transparent: true,
+                                side: THREE.DoubleSide
+                            });
+                        } else {
+                            // Production mode: Invisible occluder
+                            node.material = new THREE.MeshBasicMaterial({
+                                colorWrite: false,
+                                depthWrite: true,
+                                side: THREE.DoubleSide
+                            });
+                        }
+                        node.renderOrder = -1; // Ensure it renders before other objects
+                    }
+                });
+            }
+        });
+
         const oldScene = document.querySelector('a-scene')
         if (oldScene) {
             try {
@@ -350,6 +393,9 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     let propertyName = prop;
                     if (prop === 'opacity') {
                         if (el.tagName === 'A-GLTF-MODEL') {
+                            // Support Occlusion: Skip opacity animation if it's an occluder
+                            if (el.hasAttribute('occlusion-material')) return;
+
                             propertyName = 'model-opacity';
                             // Initialize
                             el.setAttribute('model-opacity', '1');
@@ -366,7 +412,10 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
 
         // Render Assets
         finalAssets.forEach((asset) => {
-            if (!asset.url) return
+            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+
+            // Allow render if it has URL OR if it is a primitive occlusion shape
+            if (!asset.url && !isPrimitiveOcclusion) return
 
             const assetEntity = document.createElement('a-entity')
             assetEntity.setAttribute('id', asset.id)
@@ -374,9 +423,27 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             assetEntity.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
             assetEntity.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
 
-            if (asset.type === '3d') {
-                const model = document.createElement('a-gltf-model')
-                model.setAttribute('src', asset.url)
+            if (asset.type === '3d' || asset.type === 'occlusion') {
+                let model: HTMLElement;
+
+                if (isPrimitiveOcclusion) {
+                    model = document.createElement('a-entity');
+                    if (asset.occlusion_shape === 'cube') {
+                        model.setAttribute('geometry', 'primitive: box');
+                    } else if (asset.occlusion_shape === 'sphere') {
+                        model.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32');
+                    } else if (asset.occlusion_shape === 'plane') {
+                        model.setAttribute('geometry', 'primitive: plane');
+                    }
+                    model.setAttribute('occlusion-material', 'debug: false');
+                } else {
+                    model = document.createElement('a-gltf-model');
+                    model.setAttribute('src', asset.url)
+
+                    if (asset.type === 'occlusion') {
+                        model.setAttribute('occlusion-material', 'debug: false');
+                    }
+                }
 
                 // Pro Mixer Keyframes (Option B)
                 // Now unified consistent logic with Admin Preview
