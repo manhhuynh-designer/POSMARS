@@ -865,21 +865,21 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
 
             {/* Video Preview */}
             {showVideoPreview && recordedVideoUrl && (
-                <div className="absolute inset-0 bg-black z-30 flex flex-col">
-                    {/* Video container - maximizes space */}
-                    <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+                <div className="fixed inset-0 bg-black z-50 flex flex-col">
+                    {/* Video container - properly sized */}
+                    <div className="flex-1 min-h-0 flex items-center justify-center p-4">
                         <video
                             src={recordedVideoUrl}
                             controls
                             autoPlay
                             loop
                             playsInline
-                            className="w-full h-full object-contain shadow-2xl"
+                            className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
                         />
                     </div>
 
-                    {/* Action Buttons - Always visible at bottom */}
-                    <div className="p-8 pb-12 bg-gradient-to-t from-black via-black/95 to-transparent">
+                    {/* Action Buttons - Fixed at bottom */}
+                    <div className="flex-shrink-0 p-6 pb-8 bg-gradient-to-t from-black via-black/95 to-transparent">
                         <div className="flex items-center justify-center gap-4 max-w-sm mx-auto">
                             <button
                                 onClick={() => {

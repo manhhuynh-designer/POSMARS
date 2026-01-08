@@ -291,31 +291,32 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
 
             {/* Video Preview Modal */}
             {showVideoPreview && recordedVideoUrl && (
-                <div className="absolute inset-0 bg-black z-30 flex flex-col">
-                    <div className="flex-1 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black z-50 flex flex-col">
+                    <div className="flex-1 min-h-0 flex items-center justify-center p-4">
                         <video
                             src={recordedVideoUrl}
                             controls
                             autoPlay
                             loop
-                            className="max-w-full max-h-full rounded-lg shadow-2xl"
+                            playsInline
+                            className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
                         />
                     </div>
-                    <div className="p-6 bg-gradient-to-t from-black/80 to-transparent">
+                    <div className="flex-shrink-0 p-6 pb-8 bg-gradient-to-t from-black via-black/95 to-transparent">
                         <div className="flex items-center justify-center gap-4">
                             <button
                                 onClick={() => {
                                     clearRecording()
                                     setShowVideoPreview(false)
                                 }}
-                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium"
+                                className="flex items-center gap-2 bg-white/20 text-white px-6 py-3 rounded-full font-medium hover:bg-white/30 transition active:scale-95"
                             >
                                 <X size={20} />
                                 Hủy
                             </button>
                             <button
                                 onClick={() => downloadRecording()}
-                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold"
+                                className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-full font-bold shadow-lg active:scale-95 transition"
                             >
                                 <Download size={20} />
                                 Tải về
