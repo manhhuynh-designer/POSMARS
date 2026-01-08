@@ -4,7 +4,7 @@ import {
     Plus, Trash2, GripVertical, Upload, Image as ImageIcon, Eye, EyeOff,
     Settings, Layers, Video, Box, Activity, ChevronRight, HelpCircle,
     RefreshCw, Play, SkipForward, Sun, Maximize, Smartphone,
-    Camera, Check, Sparkles, Loader2, Clock, Minus
+    Camera, Check, Sparkles, Loader2, Clock, Minus, ExternalLink, Globe, Scan, MoreVertical, Copy, Link
 } from 'lucide-react'
 
 const FaceFilterPreview = lazy(() => import('./FaceFilterPreview'))
@@ -76,9 +76,25 @@ export interface ARAsset {
     steps?: AnimationStep[]
 }
 
+// Multi-target support
+export interface TargetConfig {
+    targetIndex: number      // Index in .mind file (0-based)
+    name: string             // Display name for admin UI
+    thumbnail?: string       // Reference image thumbnail
+    assets: ARAsset[]        // Assets for THIS target only
+    extends?: number         // Inherit from target index
+}
+
 export interface ImageTrackingConfig {
-    assets: ARAsset[]
-    marker_url?: string // NEW: .mind file URL
+    // Multi-target mode
+    targets?: TargetConfig[]
+    max_track?: number
+    default_assets?: ARAsset[] // Global fallback assets
+
+    // Legacy mode
+    assets?: ARAsset[]
+    marker_url?: string // .mind file URL
+
     enable_capture?: boolean
     show_scan_hint?: boolean
 
@@ -92,6 +108,8 @@ export interface ImageTrackingConfig {
     // Capture Settings
     max_video_duration?: number
     capture_quality?: number
+
+
 
     // Legacy support (to be migrated)
     model_scale?: number
@@ -1111,14 +1129,139 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
     // RENDER: Image Tracking
     if (template === 'image_tracking') {
-        // Initialize selected asset if not set
-        if (!selectedAssetId && config.assets?.[0]) {
-            setSelectedAssetId(config.assets[0].id)
-        }
-
-        const selectedAsset = config.assets?.find((a: ARAsset) => a.id === selectedAssetId)
+        const [selectedTargetIndex, setSelectedTargetIndex] = useState(0)
+        const [menuOpenIndex, setMenuOpenIndex] = useState<number | null>(null)
         const [timelineZoom, setTimelineZoom] = useState(100)
 
+        // Initialize targets if missing (Migration/Init)
+        useEffect(() => {
+            if (!config.targets || config.targets.length === 0) {
+                const initialTargets: TargetConfig[] = [{
+                    targetIndex: 0,
+                    name: 'Target 0',
+                    assets: config.assets || []
+                }]
+                setConfig(prev => ({
+                    ...prev,
+                    targets: initialTargets,
+                    max_track: prev.max_track || 3
+                }))
+            }
+        }, [])
+
+        // Get Current Target & Assets
+        // Index -1 = GLOBAL DEFAULTS
+        const currentTarget = selectedTargetIndex === -1
+            ? { targetIndex: -1, name: 'GLOBAL DEFAULTS', assets: config.default_assets || [] }
+            : (config.targets?.[selectedTargetIndex] || { targetIndex: 0, name: 'Target 0', assets: [] })
+
+        const isInherited = currentTarget.extends !== undefined
+        const currentAssets = isInherited
+            ? (config.targets?.find((t: any) => t.targetIndex === currentTarget.extends)?.assets || [])
+            : (currentTarget.assets || [])
+
+        // Initialize selected asset if not set but assets exist
+        if (!selectedAssetId && currentAssets.length > 0) {
+            // Defer state update to avoid loops, or just rely on user click.
+            // Actually, the original code did this. Let's keep it safe.
+            // setSelectedAssetId(currentAssets[0].id)
+        }
+
+        const selectedAsset = currentAssets.find((a: ARAsset) => a.id === selectedAssetId)
+
+        // Target Management
+        const updateConfig = (key: string, value: any) => {
+            setConfig({ ...config, [key]: value })
+        }
+
+        const addTarget = () => {
+            const newIndex = (config.targets?.length || 0)
+            const newTarget: TargetConfig = {
+                targetIndex: newIndex,
+                name: `Target ${newIndex}`,
+                assets: []
+            }
+            const newTargets = [...(config.targets || []), newTarget]
+            updateConfig('targets', newTargets)
+            setSelectedTargetIndex(newIndex)
+            setSelectedAssetId(null)
+        }
+
+        const removeTarget = (index: number) => {
+            const targets = config.targets || []
+            if (targets.length <= 1) {
+                alert("Cannot remove the last target")
+                return
+            }
+            // Remove and re-index
+            const newTargets = targets
+                .filter((_, i) => i !== index)
+                .map((t: TargetConfig, i) => ({ ...t, targetIndex: i, name: t.name.startsWith('Target ') ? `Target ${i}` : t.name }))
+
+            updateConfig('targets', newTargets)
+
+            // Adjust selection
+            if (selectedTargetIndex >= index) {
+                setSelectedTargetIndex(Math.max(0, selectedTargetIndex - 1))
+            }
+            setSelectedAssetId(null)
+        }
+
+        const updateTarget = (index: number, updates: Partial<TargetConfig>) => {
+            // GLOBAL
+            if (index === -1) {
+                if (updates.assets) {
+                    updateConfig('default_assets', updates.assets)
+                }
+                return
+            }
+
+            const newTargets = (config.targets || []).map((t: TargetConfig, i) =>
+                i === index ? { ...t, ...updates } : t
+            )
+            updateConfig('targets', newTargets)
+        }
+
+        const handleClone = (targetIndex: number) => {
+            const parentStr = prompt('Clone assets from Target Index (or -1 for Global):')
+            if (parentStr === null) return
+            const parentIdx = parseInt(parentStr)
+            if (isNaN(parentIdx)) return
+
+            let assetsToClone: ARAsset[] = []
+            if (parentIdx === -1) {
+                assetsToClone = config.default_assets || []
+            } else {
+                const parent = config.targets?.find((t: any) => t.targetIndex === parentIdx)
+                assetsToClone = parent?.assets || []
+            }
+
+            // Deep copy assets
+            const newAssets = JSON.parse(JSON.stringify(assetsToClone))
+            // Regenerate IDs
+            newAssets.forEach((a: ARAsset) => a.id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
+
+            updateTarget(targetIndex, { assets: newAssets, extends: undefined })
+            setMenuOpenIndex(null)
+        }
+
+        const handleInherit = (targetIndex: number) => {
+            const parentStr = prompt('Inherit content from Target Index (or -1 for Global):')
+            if (parentStr === null) return
+            const parentIdx = parseInt(parentStr)
+            if (isNaN(parentIdx)) return
+
+            // Check self-reference
+            if (config.targets?.[targetIndex]?.targetIndex === parentIdx) {
+                alert('Cannot inherit from self!')
+                return
+            }
+
+            updateTarget(targetIndex, { extends: parentIdx, assets: [] })
+            setMenuOpenIndex(null)
+        }
+
+        // Asset Management (Scoped to Selected Target)
         const addAsset = (type: '3d' | 'video' | 'occlusion') => {
             const newAsset: ARAsset = {
                 id: `asset-${Date.now()}`,
@@ -1132,22 +1275,23 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 video_loop: true,
                 occlusion_shape: 'model'
             }
-            const updatedAssets = [...(config.assets || []), newAsset]
-            setConfig({ ...config, assets: updatedAssets })
+
+            const updatedAssets = [...currentAssets, newAsset]
+            updateTarget(selectedTargetIndex, { assets: updatedAssets })
             setSelectedAssetId(newAsset.id)
         }
 
         const removeAsset = (id: string) => {
-            const updatedAssets = config.assets.filter((a: ARAsset) => a.id !== id)
-            setConfig({ ...config, assets: updatedAssets })
-            if (selectedAssetId === id) setSelectedAssetId(updatedAssets[0]?.id || null)
+            const updatedAssets = currentAssets.filter((a: ARAsset) => a.id !== id)
+            updateTarget(selectedTargetIndex, { assets: updatedAssets })
+            if (selectedAssetId === id) setSelectedAssetId(null)
         }
 
         const updateAsset = (id: string, updates: Partial<ARAsset>) => {
-            const updatedAssets = config.assets.map((a: ARAsset) =>
+            const updatedAssets = currentAssets.map((a: ARAsset) =>
                 a.id === id ? { ...a, ...updates } : a
             )
-            setConfig({ ...config, assets: updatedAssets })
+            updateTarget(selectedTargetIndex, { assets: updatedAssets })
         }
 
         // Pro Mixer: Drag Handlers
@@ -1186,48 +1330,220 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
             updateAsset(selectedAssetId, { keyframes: [...(selectedAsset?.keyframes || []), newKeyframe] });
         }
 
-        const updateConfig = (key: string, value: any) => {
-            setConfig({ ...config, [key]: value })
-        }
-
         return (
             <div className="flex flex-col xl:flex-row gap-8 min-h-[600px] animate-in fade-in duration-500 max-w-full">
                 {/* Left Column: Configuration */}
                 <div className="flex-1 space-y-8">
+
+                    {/* -1. Marker Configuration */}
+                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl p-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <Scan size={18} className="text-blue-500" />
+                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Cấu hình Marker</h3>
+                            </div>
+                            <a
+                                href="https://hiukim.github.io/mind-ar-js-doc/tools/compile"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 border border-cyan-500/20 text-white rounded-lg text-[10px] font-black hover:from-cyan-500 hover:to-blue-500 transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
+                            >
+                                <ExternalLink size={14} /> MindAR Compiler
+                            </a>
+                        </div>
+                        <div className="bg-[#1a1a1a] p-4 rounded-xl border border-white/10 flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white/5 rounded-lg flex items-center justify-center border border-white/5">
+                                {config.marker_url ? <Check size={24} className="text-green-500" /> : <Upload size={24} className="text-white/40" />}
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-xs font-bold text-white uppercase tracking-wider mb-1">Marker File (.mind)</p>
+                                <p className="text-[10px] text-white/40 truncate max-w-[200px]">{config.marker_url || 'Chưa có file nào'}</p>
+                            </div>
+                            <label className={`px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all active:scale-95 ${uploadingField === 'marker_url' ? 'opacity-50' : ''}`}>
+                                {uploadingField === 'marker_url' ? 'Uploading...' : 'Upload'}
+                                <input
+                                    type="file"
+                                    disabled={uploadingField === 'marker_url'}
+                                    className="hidden"
+                                    accept=".mind"
+                                    onChange={(e) => handleFileUpload(e, 'marker_url', 'marker_url')}
+                                />
+                            </label>
+                        </div>
+                    </section>
+
+                    {/* 0. Target Manager */}
+                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl">
+                        <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <ImageIcon size={18} className="text-pink-500" />
+                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Quản lý Targets</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-black uppercase text-white/40 tracking-widest bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+                                    {(config.targets?.length || 0)} / {config.max_track || 3}
+                                </span>
+                                <button
+                                    onClick={addTarget}
+                                    disabled={(config.targets?.length || 0) >= 100}
+                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-pink-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Plus size={14} /> Target
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-2 max-h-[250px] overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-1 gap-2">
+                                {/* Global Defaults */}
+                                <div
+                                    onClick={() => { setSelectedTargetIndex(-1); setSelectedAssetId(null); }}
+                                    className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedTargetIndex === -1
+                                        ? 'bg-[#1a1a1a] border border-pink-500/50 shadow-[0_0_20px_rgba(236,72,153,0.1)]'
+                                        : 'hover:bg-white/5 border border-transparent'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-3 flex-1">
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 ${selectedTargetIndex === -1 ? 'bg-pink-500 text-white' : 'bg-white/5 text-white/40'}`}>
+                                            <Globe size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-black uppercase tracking-tight text-white mb-0.5">Global Defaults</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest bg-white/5 px-1.5 py-0.5 rounded">
+                                                    Fallback
+                                                </span>
+                                                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">
+                                                    {config.default_assets?.length || 0} Assets
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {config.targets?.map((target: TargetConfig, idx: number) => (
+                                    <div
+                                        key={target.targetIndex}
+                                        onClick={() => { setSelectedTargetIndex(idx); setSelectedAssetId(null); }}
+                                        className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedTargetIndex === idx
+                                            ? 'bg-[#1a1a1a] border border-pink-500/50 shadow-[0_0_20px_rgba(236,72,153,0.1)]'
+                                            : 'hover:bg-white/5 border border-transparent'
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-3 flex-1">
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 ${selectedTargetIndex === idx ? 'bg-pink-500 text-white' : 'bg-white/5 text-white/40'}`}>
+                                                {target.targetIndex}
+                                            </div>
+                                            <div className="flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={target.name}
+                                                    onChange={(e) => updateTarget(idx, { name: e.target.value })}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="bg-transparent border-none p-0 text-sm font-black uppercase tracking-tight text-white focus:ring-0 w-full placeholder:text-white/20"
+                                                    placeholder={`Target ${target.targetIndex}`}
+                                                />
+                                                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mt-0.5">
+                                                    {target.assets?.length || 0} Assets
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Action Menu */}
+                                        <div className="relative">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setMenuOpenIndex(menuOpenIndex === idx ? null : idx)
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                            >
+                                                <MoreVertical size={14} />
+                                            </button>
+
+                                            {menuOpenIndex === idx && (
+                                                <div className="absolute right-0 top-8 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-200">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleClone(idx); }}
+                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
+                                                    >
+                                                        <Copy size={12} /> Clone Content
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleInherit(idx); }}
+                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
+                                                    >
+                                                        <Link size={12} /> Inherit Content
+                                                    </button>
+                                                    <div className="h-px bg-white/5 my-0.5" />
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); removeTarget(idx); }}
+                                                        disabled={(config.targets?.length || 0) <= 1}
+                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-red-500 hover:bg-red-500/10 rounded-lg transition-all uppercase tracking-wider text-left disabled:opacity-50"
+                                                    >
+                                                        <Trash2 size={12} /> Remove
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </section>
 
                     {/* 1. Asset Manager */}
                     <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl">
                         <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Layers size={18} className="text-orange-500" />
-                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Quản lý Assets</h3>
+                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Assets: {currentTarget.name}</h3>
                             </div>
                             <div className="flex gap-2">
-                                <button
-                                    onClick={() => addAsset('3d')}
-                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-white hover:text-black transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                >
-                                    <Plus size={14} /> 3D
-                                </button>
-                                <button
-                                    onClick={() => addAsset('video')}
-                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-white hover:text-black transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                >
-                                    <Plus size={14} /> Video
-                                </button>
-                                <button
-                                    onClick={() => addAsset('occlusion')}
-                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                >
-                                    <Plus size={14} /> Occlusion
-                                </button>
+
+                                <div className="flex items-center gap-2">
+                                    {isInherited ? (
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                            <Link size={12} className="text-blue-500" />
+                                            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                                                Linked to Target {currentTarget.extends}
+                                            </span>
+                                            <button
+                                                onClick={() => updateTarget(selectedTargetIndex, { extends: undefined, assets: JSON.parse(JSON.stringify(currentAssets)) })}
+                                                className="ml-2 px-2 py-0.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-[9px] font-black uppercase tracking-widest transition-all"
+                                            >
+                                                Break Link
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => addAsset('3d')}
+                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-blue-600 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
+                                            >
+                                                <Plus size={14} /> 3D Model
+                                            </button>
+                                            <button
+                                                onClick={() => addAsset('video')}
+                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-purple-600 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
+                                            >
+                                                <Plus size={14} /> Video
+                                            </button>
+                                            <button
+                                                onClick={() => addAsset('occlusion')}
+                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
+                                            >
+                                                <Plus size={14} /> Occlusion
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
                         <div className="p-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            {config.assets?.length > 0 ? (
+                            {currentAssets.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-1">
-                                    {config.assets.map((asset: ARAsset) => (
+                                    {currentAssets.map((asset: ARAsset) => (
                                         <div
                                             key={asset.id}
                                             onClick={() => setSelectedAssetId(asset.id)}
@@ -1852,25 +2168,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                         </button>
                                     </div>
 
-                                    <div className="space-y-4 pt-6 border-t border-white/5">
-                                        <label className="text-[10px] font-black text-white/60 uppercase tracking-widest block flex items-center gap-2">
-                                            <ImageIcon size={14} className="text-blue-500" /> MARKER FILE (.MIND)
-                                        </label>
-                                        <div className="flex gap-2 p-1.5 bg-blue-500/5 rounded-2xl border border-blue-500/20 shadow-inner group focus-within:border-blue-500 transition-all">
-                                            <input
-                                                type="text"
-                                                value={config.marker_url || ''}
-                                                onChange={(e) => updateConfig('marker_url', e.target.value)}
-                                                className="flex-1 bg-transparent border-none rounded-lg px-4 py-2 text-xs text-white outline-none placeholder:text-white/5 font-mono"
-                                                placeholder="https://..."
-                                            />
-                                            <label className="bg-blue-600 text-white p-3 rounded-xl cursor-pointer hover:bg-blue-500 transition shadow-lg shadow-blue-900/40">
-                                                <Upload size={14} />
-                                                <input type="file" className="hidden" accept=".mind" onChange={(e) => handleFileUpload(e, 'temp', 'markers').then(url => url && updateConfig('marker_url', url))} />
-                                            </label>
-                                        </div>
-                                        <p className="text-[9px] text-white/40 font-medium italic">Cần thiết để hệ thống nhận diện được hình ảnh mục tiêu.</p>
-                                    </div>
+
                                 </div>
                             </div>
                         </div>

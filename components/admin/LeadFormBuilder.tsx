@@ -33,7 +33,12 @@ interface LeadFormBuilderProps {
 }
 
 export default function LeadFormBuilder({ initialConfig, onChange, onUpload }: LeadFormBuilderProps) {
-    const [config, setConfig] = useState<LeadFormConfig>(initialConfig)
+    const [config, setConfig] = useState<LeadFormConfig>({
+        fields: [],
+        submit_text: 'Tiếp tục',
+        consent_text: 'Tôi đồng ý với điều khoản sử dụng',
+        ...initialConfig
+    })
     const [uploadingField, setUploadingField] = useState<string | null>(null)
 
     useEffect(() => {

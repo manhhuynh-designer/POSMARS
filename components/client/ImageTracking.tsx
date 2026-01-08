@@ -47,8 +47,23 @@ interface ARAsset {
     animation_duration?: number
 }
 
+// Multi-target support
+interface TargetConfig {
+    targetIndex: number      // Index in .mind file (0-based)
+    name: string             // Display name for admin UI  
+    thumbnail?: string       // Reference image thumbnail
+    assets: ARAsset[]        // Assets for THIS target only
+    extends?: number         // Inherit from target index
+}
+
 interface ImageTrackingConfig {
-    assets: ARAsset[]
+    // Multi-target mode (new)
+    targets?: TargetConfig[]
+
+    default_assets?: ARAsset[] // Global fallback assets
+
+    // Legacy single-target mode (backward compatible)
+    assets?: ARAsset[]
 
     // Lighting & Render
     ambient_intensity?: number
@@ -67,6 +82,7 @@ interface ImageTrackingConfig {
     enable_capture?: boolean
     max_video_duration?: number
     capture_quality?: 'standard' | 'high'
+    max_track?: number       // Max concurrent targets to track (default: 3)
 }
 
 interface ImageTrackingProps {
@@ -87,27 +103,43 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
     const [showVideoPreview, setShowVideoPreview] = useState(false)
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
 
-    // Migration logic for old configs
-    const finalAssets = config.assets || [
-        {
-            id: 'legacy-1',
-            name: 'Primary Model',
-            type: '3d',
-            url: modelUrl || '',
-            scale: config.model_scale || 1,
-            position: config.model_position || [0, 0, 0],
-            rotation: config.model_rotation || [0, 0, 0],
-            animation_mode: 'auto'
+    // Multi-target support: Convert config to unified targets array
+    const finalTargets: TargetConfig[] = (() => {
+        // New multi-target mode
+        if (config.targets && config.targets.length > 0) {
+            return config.targets
         }
-    ]
+
+        // Legacy single-target mode with assets[]
+        if (config.assets && config.assets.length > 0) {
+            return [{
+                targetIndex: 0,
+                name: 'Default',
+                assets: config.assets
+            }]
+        }
+
+        // Ultra-legacy mode with model_scale/position/rotation
+        return [{
+            targetIndex: 0,
+            name: 'Default',
+            assets: [{
+                id: 'legacy-1',
+                name: 'Primary Model',
+                type: '3d' as const,
+                url: modelUrl || '',
+                scale: config.model_scale || 1,
+                position: config.model_position || [0, 0, 0],
+                rotation: config.model_rotation || [0, 0, 0],
+                animation_mode: 'auto'
+            }]
+        }]
+    })()
 
     useEffect(() => {
         console.log('🚀 ImageTracking: Config received:', config);
-        console.log('🚀 ImageTracking: Final Assets:', finalAssets);
+        console.log('🚀 ImageTracking: Final Targets:', finalTargets);
         console.log('🚀 ImageTracking: Ambient:', config.ambient_intensity, 'Directional:', config.directional_intensity);
-        if (finalAssets.length > 0 && finalAssets[0].keyframes) {
-            console.log('🚀 ImageTracking: First asset keyframes:', finalAssets[0].keyframes);
-        }
     }, [config]);
 
     // Video recording hook
@@ -292,7 +324,9 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         const scene = document.createElement('a-scene')
         // Smoothing filters: Lower filterBeta = MORE stabilization (less jitter)
         // filterMinCF: 0.0001 (very low = smooth), filterBeta: 0.001 (very low = very stable)
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1`)
+        // maxTrack: max concurrent targets to track (default 3 for performance)
+        const maxTrack = config.max_track || 3
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1; maxTrack: ${maxTrack}`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
@@ -378,9 +412,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         camera.setAttribute('look-controls', 'enabled: false')
         scene.appendChild(camera)
 
-        const targetEntity = document.createElement('a-entity')
-        targetEntity.setAttribute('mindar-image-target', 'targetIndex: 0')
-
+        // Keyframe animation helper function
         const applyKeyframes = (el: HTMLElement, asset: ARAsset) => {
             if (!asset.keyframes || asset.keyframes.length === 0) return;
             const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
@@ -418,142 +450,202 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             });
         }
 
-        // Render Assets
-        finalAssets.forEach((asset) => {
-            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+        // Helper function to render assets on a target entity
+        const renderAssetsForTarget = (targetEntity: HTMLElement, assets: ARAsset[], targetIndex: number) => {
+            assets.forEach((asset) => {
+                const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
 
-            // Allow render if it has URL OR if it is a primitive occlusion shape
-            if (!asset.url && !isPrimitiveOcclusion) return
+                // Allow render if it has URL OR if it is a primitive occlusion shape
+                if (!asset.url && !isPrimitiveOcclusion) return
 
-            const assetEntity = document.createElement('a-entity')
-            assetEntity.setAttribute('id', asset.id)
-            assetEntity.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
-            assetEntity.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
-            assetEntity.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
+                const assetEntity = document.createElement('a-entity')
+                // Use unique ID for unique instance
+                assetEntity.setAttribute('id', `${asset.id}-${targetIndex}`)
+                assetEntity.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
+                assetEntity.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
+                assetEntity.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
 
-            if (asset.type === '3d' || asset.type === 'occlusion') {
-                let model: HTMLElement;
+                if (asset.type === '3d' || asset.type === 'occlusion') {
+                    let model: HTMLElement;
 
-                if (isPrimitiveOcclusion) {
-                    console.log('🛡️ Creating Primitive Occlusion:', asset.id, asset.occlusion_shape)
-                    model = document.createElement('a-entity');
-                    if (asset.occlusion_shape === 'cube') {
-                        model.setAttribute('geometry', 'primitive: box');
-                    } else if (asset.occlusion_shape === 'sphere') {
-                        model.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32');
-                    } else if (asset.occlusion_shape === 'plane') {
-                        model.setAttribute('geometry', 'primitive: plane');
-                    }
-                    model.setAttribute('occlusion-material', 'debug: false');
-                } else {
-                    model = document.createElement('a-gltf-model');
-                    model.setAttribute('src', asset.url)
-
-                    if (asset.type === 'occlusion') {
+                    if (isPrimitiveOcclusion) {
+                        console.log('🛡️ Creating Primitive Occlusion:', asset.id, asset.occlusion_shape)
+                        model = document.createElement('a-entity');
+                        if (asset.occlusion_shape === 'cube') {
+                            model.setAttribute('geometry', 'primitive: box');
+                        } else if (asset.occlusion_shape === 'sphere') {
+                            model.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32');
+                        } else if (asset.occlusion_shape === 'plane') {
+                            model.setAttribute('geometry', 'primitive: plane');
+                        }
                         model.setAttribute('occlusion-material', 'debug: false');
+                    } else {
+                        model = document.createElement('a-gltf-model');
+                        model.setAttribute('src', asset.url)
+
+                        if (asset.type === 'occlusion') {
+                            model.setAttribute('occlusion-material', 'debug: false');
+                        }
                     }
-                }
 
-                // Pro Mixer Keyframes (Option B)
-                // Now unified consistent logic with Admin Preview
-                if (asset.keyframes && asset.keyframes.length > 0) {
-                    applyKeyframes(model, asset);
-                } else {
-                    // Default static state if no keyframes
-                }
+                    // Pro Mixer Keyframes (Option B)
+                    // Now unified consistent logic with Admin Preview
+                    if (asset.keyframes && asset.keyframes.length > 0) {
+                        applyKeyframes(model, asset);
+                    } else {
+                        // Default static state if no keyframes
+                    }
 
-                assetEntity.appendChild(model)
-            } else if (asset.type === 'video') {
-                const videoId = `video-${asset.id}`
-                let videoEl = document.getElementById(videoId) as HTMLVideoElement
+                    assetEntity.appendChild(model)
+                } else if (asset.type === 'video') {
+                    const videoId = `video-${asset.id}`
+                    let videoEl = document.getElementById(videoId) as HTMLVideoElement
 
-                if (!videoEl) {
-                    videoEl = document.createElement('video')
-                    videoEl.id = videoId
-                    videoEl.setAttribute('src', asset.url)
-                    videoEl.setAttribute('crossorigin', 'anonymous')
-                    videoEl.setAttribute('playsinline', 'true')
-                    videoEl.setAttribute('webkit-playsinline', 'true')
-                    videoEl.preload = 'auto'
-                    videoEl.muted = true // Important for autoplay
-                    videoEl.loop = asset.video_loop !== false
+                    if (!videoEl) {
+                        videoEl = document.createElement('video')
+                        videoEl.id = videoId
+                        videoEl.setAttribute('src', asset.url)
+                        videoEl.setAttribute('crossorigin', 'anonymous')
+                        videoEl.setAttribute('playsinline', 'true')
+                        videoEl.setAttribute('webkit-playsinline', 'true')
+                        videoEl.preload = 'auto'
+                        videoEl.muted = true // Important for autoplay
+                        videoEl.loop = asset.video_loop !== false
 
-                    // Hide via CSS but keep in layout for playback
-                    videoEl.style.position = 'absolute'
-                    videoEl.style.top = '0'
-                    videoEl.style.left = '0'
-                    videoEl.style.opacity = '0'
-                    videoEl.style.zIndex = '-1'
-                    videoEl.style.pointerEvents = 'none'
+                        // Hide via CSS but keep in layout for playback
+                        videoEl.style.position = 'absolute'
+                        videoEl.style.top = '0'
+                        videoEl.style.left = '0'
+                        videoEl.style.opacity = '0'
+                        videoEl.style.zIndex = '-1'
+                        videoEl.style.pointerEvents = 'none'
 
-                    document.body.appendChild(videoEl)
+                        document.body.appendChild(videoEl)
 
-                    // Event listeners for debugging and state handling
-                    videoEl.addEventListener('loadeddata', () => {
-                        console.log(`🎥 Video ${videoId} buffered data. ReadyState: ${videoEl.readyState}`)
-                    })
+                        // Event listeners for debugging and state handling
+                        videoEl.addEventListener('loadeddata', () => {
+                            console.log(`🎥 Video ${videoId} buffered data. ReadyState: ${videoEl.readyState}`)
+                        })
+                        videoEl.addEventListener('error', (e) => {
+                            console.error(`❌ Video ${videoId} error:`, videoEl.error)
+                        })
+
+                        // Try playing immediately to "warm up" (will likely pause if not visible/interacted)
+                        // But for AR, we often want it to start when target found.
+                        // However, A-Frame needs a valid texture. 
+                        // Let's only load it. Play on targetFound.
+                        videoEl.load()
+                    }
+
+                    const plane = document.createElement('a-video')
+                    plane.setAttribute('src', `#${videoId}`)
+                    // Use a standard material first to debug, then flat. 
+                    // Flat is correct for "screen" effect.
+                    plane.setAttribute('material', 'shader: flat; src: #' + videoId + '; transparent: true')
+                    plane.setAttribute('width', (asset.video_width || 1).toString())
+                    plane.setAttribute('height', (asset.video_height || 0.56).toString())
+
+                    // Video Keyframes
+                    applyKeyframes(plane, asset);
+
+                    // Error handling: Visual feedback in AR
                     videoEl.addEventListener('error', (e) => {
                         console.error(`❌ Video ${videoId} error:`, videoEl.error)
+                        // Change plane to red to indicate error
+                        plane.setAttribute('material', 'shader: flat; color: #ff0000; opacity: 0.7')
+                        // Optional: Add text entity "ERROR"
+                        const text = document.createElement('a-text')
+                        text.setAttribute('value', 'DECODE ERROR\n(Check Codec)')
+                        text.setAttribute('align', 'center')
+                        text.setAttribute('scale', '0.5 0.5 0.5')
+                        text.setAttribute('position', '0 0 0.1')
+                        plane.appendChild(text)
                     })
 
-                    // Try playing immediately to "warm up" (will likely pause if not visible/interacted)
-                    // But for AR, we often want it to start when target found.
-                    // However, A-Frame needs a valid texture. 
-                    // Let's only load it. Play on targetFound.
-                    videoEl.load()
+                    targetEntity.addEventListener('targetFound', () => {
+                        console.log(`🎯 Target Found! Attempting to play video ${videoId}`)
+                        if (asset.video_autoplay !== false) {
+                            videoEl.play()
+                                .then(() => console.log(`▶️ Video ${videoId} playing`))
+                                .catch(e => {
+                                    console.warn(`⚠️ Video ${videoId} play failed:`, e)
+                                    // If failed, try muted
+                                    videoEl.muted = true
+                                    videoEl.play().catch(err => console.error('Double fail', err))
+                                })
+                        }
+                    })
+
+                    targetEntity.addEventListener('targetLost', () => {
+                        console.log(`❌ Target Lost. Pausing video ${videoId}`)
+                        videoEl.pause()
+                    })
+
+                    assetEntity.appendChild(plane)
                 }
 
-                const plane = document.createElement('a-video')
-                plane.setAttribute('src', `#${videoId}`)
-                // Use a standard material first to debug, then flat. 
-                // Flat is correct for "screen" effect.
-                plane.setAttribute('material', 'shader: flat; src: #' + videoId + '; transparent: true')
-                plane.setAttribute('width', (asset.video_width || 1).toString())
-                plane.setAttribute('height', (asset.video_height || 0.56).toString())
+                targetEntity.appendChild(assetEntity)
+            })
+        }
 
-                // Video Keyframes
-                applyKeyframes(plane, asset);
+        // MULTI-TARGET: Create a target entity for each target in finalTargets
+        console.log(`🎯 Multi-Target: Creating ${finalTargets.length} target entities`)
 
-                // Error handling: Visual feedback in AR
-                videoEl.addEventListener('error', (e) => {
-                    console.error(`❌ Video ${videoId} error:`, videoEl.error)
-                    // Change plane to red to indicate error
-                    plane.setAttribute('material', 'shader: flat; color: #ff0000; opacity: 0.7')
-                    // Optional: Add text entity "ERROR"
-                    const text = document.createElement('a-text')
-                    text.setAttribute('value', 'DECODE ERROR\n(Check Codec)')
-                    text.setAttribute('align', 'center')
-                    text.setAttribute('scale', '0.5 0.5 0.5')
-                    text.setAttribute('position', '0 0 0.1')
-                    plane.appendChild(text)
-                })
+        finalTargets.forEach((target) => {
+            const targetEntity = document.createElement('a-entity')
+            targetEntity.setAttribute('mindar-image-target', `targetIndex: ${target.targetIndex}`)
+            targetEntity.setAttribute('id', `target-${target.targetIndex}`)
 
-                targetEntity.addEventListener('targetFound', () => {
-                    console.log(`🎯 Target Found! Attempting to play video ${videoId}`)
-                    if (asset.video_autoplay !== false) {
-                        videoEl.play()
-                            .then(() => console.log(`▶️ Video ${videoId} playing`))
-                            .catch(e => {
-                                console.warn(`⚠️ Video ${videoId} play failed:`, e)
-                                // If failed, try muted
-                                videoEl.muted = true
-                                videoEl.play().catch(err => console.error('Double fail', err))
-                            })
-                    }
-                })
+            // Determine assets to render: specific or default
+            // Render assets for this specific target
+            let assetsToRender = target.assets && target.assets.length > 0 ? target.assets : []
 
-                targetEntity.addEventListener('targetLost', () => {
-                    console.log(`❌ Target Lost. Pausing video ${videoId}`)
-                    videoEl.pause()
-                })
-
-                assetEntity.appendChild(plane)
+            // 1. Inheritance Logic
+            if (assetsToRender.length === 0 && target.extends !== undefined) {
+                const parent = config.targets?.find((t: any) => t.targetIndex === target.extends)
+                if (parent && parent.assets && parent.assets.length > 0) {
+                    assetsToRender = parent.assets
+                }
             }
 
-            targetEntity.appendChild(assetEntity)
+            // 2. Fallback to Global Defaults
+            if (assetsToRender.length === 0) {
+                assetsToRender = config.default_assets || []
+            }
+
+            console.log(`🎯 Creating target entity for index ${target.targetIndex} (${target.name}) with ${assetsToRender.length} assets`)
+
+            renderAssetsForTarget(targetEntity, assetsToRender, target.targetIndex)
+
+            // Event listeners for this target
+            targetEntity.addEventListener('targetFound', (e) => {
+                // Prevent infinite loop: only process if event originated from targetEntity itself
+                if (e.target !== targetEntity) return
+
+                console.log(`🎯 Target ${target.targetIndex} (${target.name}) Found! Triggering animations on child entities`)
+                setScanning(false)
+
+                // Manually emit 'targetFound' to ALL child entities so animations trigger
+                // Using bubbles=false to prevent event from bubbling back up
+                const children = targetEntity.querySelectorAll('*')
+                children.forEach((child: Element) => {
+                    if ((child as any).emit) {
+                        (child as any).emit('targetFound', null, false)
+                    }
+                })
+            })
+
+            targetEntity.addEventListener('targetLost', () => {
+                console.log(`❌ Target ${target.targetIndex} (${target.name}) Lost`)
+                // Only set scanning=true if ALL targets are lost
+                // For now, we set it true - can be optimized later to track active targets
+                setScanning(true)
+            })
+
+            scene.appendChild(targetEntity)
         })
 
-        scene.appendChild(targetEntity)
+        // Append scene to container and set up ready events
         containerRef.current.appendChild(scene)
 
         const fallbackTimer = setTimeout(() => {
@@ -566,29 +658,6 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             clearTimeout(fallbackTimer) // Clear fallback if ready
             setLoading(false)
         })
-
-        targetEntity.addEventListener('targetFound', (e) => {
-            // Prevent infinite loop: only process if event originated from targetEntity itself
-            if (e.target !== targetEntity) return
-
-            console.log('🎯 targetFound: triggering animations on all child entities')
-            setScanning(false)
-
-            // Manually emit 'targetFound' to ALL child entities so animations trigger
-            // Using bubbles=false to prevent event from bubbling back up
-            const children = targetEntity.querySelectorAll('*')
-            children.forEach((child: Element) => {
-                if ((child as any).emit) {
-                    (child as any).emit('targetFound', null, false)
-                }
-            })
-        })
-
-        targetEntity.addEventListener('targetLost', () => {
-            setScanning(true)
-        })
-
-
 
         // Monitor for when video element is added by MindAR (observe entire subtree)
         const attachVideo = (video: HTMLVideoElement) => {

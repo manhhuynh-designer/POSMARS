@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, X, Box, Check, Sparkles, Loader2, RotateCcw } from 'lucide-react'
-import { ImageTrackingConfig } from './TemplateConfigBuilder'
+import { ImageTrackingConfig, ARAsset, TargetConfig } from './TemplateConfigBuilder'
 
 interface ImageTrackingPreviewProps {
     markerUrl: string
@@ -247,7 +247,9 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         const scene = document.createElement('a-scene')
         // Smoothing filters: Must match Client settings for consistent preview
         // filterMinCF: 0.00001 (very low = smooth), filterBeta: 0.001 (very low = very stable)
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1`)
+        // maxTrack: max concurrent targets to track (default 3 for performance)
+        const maxTrack = config.max_track || 3
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1; maxTrack: ${maxTrack}`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
@@ -343,199 +345,265 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             })
         }
 
-        // Target Entity
-        const targetEntity = document.createElement('a-entity')
-        targetEntity.setAttribute('mindar-image-target', 'targetIndex: 0')
+        // Helper function: Render assets for a target (Identical to Client Logic)
+        const renderAssetsForTarget = (targetEntity: any, assets: ARAsset[], targetIndex: number) => {
+            assets.forEach(asset => {
+                const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
 
-        // Add Assets
-        config.assets?.forEach(asset => {
-            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+                // Allow render if it has URL OR if it is a primitive occlusion shape
+                if (!asset.url && !isPrimitiveOcclusion) return
 
-            // Allow render if it has URL OR if it is a primitive occlusion shape
-            if (!asset.url && !isPrimitiveOcclusion) return
+                console.log(`🎬 Target ${targetIndex} - AR Asset ${asset.name}: keyframes =`, asset.keyframes?.length || 0, asset.keyframes)
 
-            console.log(`🎬 AR Asset ${asset.name}: keyframes =`, asset.keyframes?.length || 0, asset.keyframes)
+                // Store entity ref for animation triggering
+                // We use a composite ID for multi-target: targetIndex_assetId
+                const assetEntityId = `${asset.id}-${targetIndex}`
 
-            let el: HTMLElement
-            if (asset.type === 'video') {
-                const videoId = `preview-video-${asset.id}`
-                let videoEl = document.getElementById(videoId) as HTMLVideoElement
+                let el: HTMLElement
+                if (asset.type === 'video') {
+                    const videoId = `preview-video-${asset.id}`
+                    let videoEl = document.getElementById(videoId) as HTMLVideoElement
 
-                if (!videoEl) {
-                    videoEl = document.createElement('video')
-                    videoEl.id = videoId
-                    videoEl.setAttribute('src', asset.url)
-                    videoEl.setAttribute('crossorigin', 'anonymous')
-                    videoEl.setAttribute('playsinline', 'true')
-                    videoEl.setAttribute('webkit-playsinline', 'true')
-                    videoEl.preload = 'auto'
-                    videoEl.muted = true
-                    videoEl.loop = asset.video_loop !== false
+                    if (!videoEl) {
+                        videoEl = document.createElement('video')
+                        videoEl.id = videoId
+                        videoEl.setAttribute('src', asset.url)
+                        videoEl.setAttribute('crossorigin', 'anonymous')
+                        videoEl.setAttribute('playsinline', 'true')
+                        videoEl.setAttribute('webkit-playsinline', 'true')
+                        videoEl.preload = 'auto'
+                        videoEl.muted = true
+                        videoEl.loop = asset.video_loop !== false
 
-                    videoEl.style.position = 'absolute'
-                    videoEl.style.top = '0'
-                    videoEl.style.left = '0'
-                    videoEl.style.opacity = '0'
-                    videoEl.style.zIndex = '-1'
-                    videoEl.style.pointerEvents = 'none'
+                        videoEl.style.position = 'absolute'
+                        videoEl.style.top = '0'
+                        videoEl.style.left = '0'
+                        videoEl.style.opacity = '0'
+                        videoEl.style.zIndex = '-1'
+                        videoEl.style.pointerEvents = 'none'
 
-                    document.body.appendChild(videoEl)
+                        document.body.appendChild(videoEl)
 
-                    videoEl.addEventListener('loadeddata', () => console.log(`🎥 Preview Video ${videoId} ready`))
-                    videoEl.addEventListener('error', (e) => console.error(`❌ Preview Video ${videoId} error:`, videoEl.error))
-                    videoEl.load()
-                }
+                        videoEl.addEventListener('loadeddata', () => console.log(`🎥 Preview Video ${videoId} ready`))
+                        videoEl.addEventListener('error', (e) => console.error(`❌ Preview Video ${videoId} error:`, videoEl.error))
+                        videoEl.load()
+                    }
 
-                el = document.createElement('a-video')
-                el.setAttribute('src', `#${videoId}`)
-                el.setAttribute('width', (asset.video_width ?? 1).toString())
-                el.setAttribute('height', (asset.video_height ?? 0.5625).toString())
-                el.setAttribute('material', `shader: flat; src: #${videoId}; transparent: true`)
+                    el = document.createElement('a-video')
+                    el.setAttribute('src', `#${videoId}`)
+                    el.setAttribute('width', (asset.video_width ?? 1).toString())
+                    el.setAttribute('height', (asset.video_height ?? 0.5625).toString())
+                    el.setAttribute('material', `shader: flat; src: #${videoId}; transparent: true`)
 
-                // Video Keyframes (Option B) for Preview
-                if (asset.keyframes && asset.keyframes.length > 0) {
-                    const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
-                    const props = ['position', 'rotation', 'scale', 'opacity'];
+                    // Video Keyframes (Option B) for Preview
+                    if (asset.keyframes && asset.keyframes.length > 0) {
+                        const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+                        const props = ['position', 'rotation', 'scale', 'opacity'];
 
-                    props.forEach(prop => {
-                        const kfsForProp = sortedKfs.filter(k => k.property === prop);
-                        if (kfsForProp.length === 0) return;
+                        props.forEach(prop => {
+                            const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                            if (kfsForProp.length === 0) return;
 
-                        kfsForProp.forEach((kf, idx) => {
-                            const animName = `animation__kf_${prop}_${idx}`;
-                            const prevKf = kfsForProp[idx - 1];
-                            let propertyName = prop;
-                            if (prop === 'opacity') propertyName = 'material.opacity';
+                            kfsForProp.forEach((kf, idx) => {
+                                const animName = `animation__kf_${prop}_${idx}`;
+                                const prevKf = kfsForProp[idx - 1];
+                                let propertyName = prop;
+                                if (prop === 'opacity') propertyName = 'material.opacity';
 
-                            let startEvents = 'targetFound';
-                            if (idx > 0) {
-                                startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
-                            }
+                                let startEvents = 'targetFound';
+                                if (idx > 0) {
+                                    startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
+                                }
 
-                            // Delay is mainly for the first keyframe to respect start time
-                            const delay = idx === 0 ? kf.time * 1000 : 0;
+                                // Delay is mainly for the first keyframe to respect start time
+                                const delay = idx === 0 ? kf.time * 1000 : 0;
 
-                            // Duration:
-                            // If idx > 0, duration is (kf.time - prevKf.time).
-                            // If idx = 0, duration is kf.time (0 -> time).
-                            const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
+                                const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
 
-                            let fromAttr = '';
-                            if (idx === 0) {
-                                let fromValue = '';
-                                if (prop === 'position') fromValue = asset.position.join(' ');
-                                else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
-                                else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
-                                else if (prop === 'opacity') fromValue = '1';
-                                fromAttr = `from: ${fromValue};`;
-                            }
+                                let fromAttr = '';
+                                if (idx === 0) {
+                                    let fromValue = '';
+                                    if (prop === 'position') fromValue = asset.position.join(' ');
+                                    else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
+                                    else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
+                                    else if (prop === 'opacity') fromValue = '1';
+                                    fromAttr = `from: ${fromValue};`;
+                                }
 
-                            const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
-                            el.setAttribute(animName, animValue)
+                                const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
+                                el.setAttribute(animName, animValue)
+                            });
                         });
-                    });
-                }
-
-                // Add play logic for this specific video
-                targetEntity.addEventListener('targetFound', () => {
-                    console.log('🎯 Preview Target Found - Playing Video')
-                    if (asset.video_autoplay !== false) {
-                        videoEl.play().catch(e => {
-                            console.warn('Preview Autoplay failed', e)
-                            videoEl.muted = true
-                            videoEl.play()
-                        })
-                    }
-                })
-                targetEntity.addEventListener('targetLost', () => {
-                    console.log('❌ Preview Target Lost - Pausing Video')
-                    videoEl.pause()
-                })
-            } else {
-
-                // Handle Primitive Occlusion Shapes
-                if (asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model') {
-                    el = document.createElement('a-entity')
-
-                    if (asset.occlusion_shape === 'cube') {
-                        el.setAttribute('geometry', 'primitive: box')
-                    } else if (asset.occlusion_shape === 'sphere') {
-                        el.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32')
-                    } else if (asset.occlusion_shape === 'plane') {
-                        el.setAttribute('geometry', 'primitive: plane')
                     }
 
-                    el.setAttribute('occlusion-material', 'debug: false')
-                }
-                // Handle GLTF Models (3D Models & Occlusion Custom Models)
-                else {
-                    el = document.createElement('a-gltf-model')
-                    el.setAttribute('src', asset.url)
+                    // Add play logic for this specific video
+                    targetEntity.addEventListener('targetFound', () => {
+                        console.log('🎯 Preview Target Found - Playing Video')
+                        if (asset.video_autoplay !== false) {
+                            videoEl.play().catch(e => {
+                                console.warn('Preview Autoplay failed', e)
+                                videoEl.muted = true
+                                videoEl.play()
+                            })
+                        }
+                    })
+                    targetEntity.addEventListener('targetLost', () => {
+                        console.log('❌ Preview Target Lost - Pausing Video')
+                        videoEl.pause()
+                    })
+                } else {
 
-                    if (asset.type === 'occlusion') {
+                    // Handle Primitive Occlusion Shapes
+                    if (asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model') {
+                        el = document.createElement('a-entity')
+
+                        if (asset.occlusion_shape === 'cube') {
+                            el.setAttribute('geometry', 'primitive: box')
+                        } else if (asset.occlusion_shape === 'sphere') {
+                            el.setAttribute('geometry', 'primitive: sphere; segmentsWidth: 32; segmentsHeight: 32')
+                        } else if (asset.occlusion_shape === 'plane') {
+                            el.setAttribute('geometry', 'primitive: plane')
+                        }
+
                         el.setAttribute('occlusion-material', 'debug: false')
-                    } else {
-                        // Initialize opacity for normal 3D models only
-                        el.setAttribute('model-opacity', '1')
+                    }
+                    // Handle GLTF Models (3D Models & Occlusion Custom Models)
+                    else {
+                        el = document.createElement('a-gltf-model')
+                        el.setAttribute('src', asset.url)
+
+                        if (asset.type === 'occlusion') {
+                            el.setAttribute('occlusion-material', 'debug: false')
+                        } else {
+                            // Initialize opacity for normal 3D models only
+                            el.setAttribute('model-opacity', '1')
+                        }
+                    }
+
+                    // Pro Mixer Keyframes for 3D Models (Option B)
+                    if (asset.keyframes && asset.keyframes.length > 0) {
+                        const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+                        const props = ['position', 'rotation', 'scale', 'opacity'];
+
+                        props.forEach(prop => {
+                            const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                            if (kfsForProp.length === 0) return;
+
+                            kfsForProp.forEach((kf, idx) => {
+                                const animName = `animation__kf_${prop}_${idx}`;
+                                const prevKf = kfsForProp[idx - 1];
+                                let propertyName = prop;
+
+                                // Handle opacity animation differently for occlusion vs normal
+                                if (prop === 'opacity') {
+                                    if (asset.type === 'occlusion') return; // Skip opacity for occlusion
+                                    propertyName = 'model-opacity';
+                                }
+
+                                let startEvents = 'targetFound';
+                                if (idx > 0) {
+                                    startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
+                                }
+
+                                const delay = idx === 0 ? kf.time * 1000 : 0;
+                                const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
+
+                                let fromAttr = '';
+                                if (idx === 0) {
+                                    let fromValue = '';
+                                    if (prop === 'position') fromValue = asset.position.join(' ');
+                                    else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
+                                    else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
+                                    else if (prop === 'opacity') fromValue = '1';
+                                    fromAttr = `from: ${fromValue};`;
+                                }
+
+                                const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
+                                el.setAttribute(animName, animValue)
+                            });
+                        });
                     }
                 }
 
-                // Pro Mixer Keyframes for 3D Models (Option B)
-                if (asset.keyframes && asset.keyframes.length > 0) {
-                    const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
-                    const props = ['position', 'rotation', 'scale', 'opacity'];
+                el.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
+                el.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
+                el.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
 
-                    props.forEach(prop => {
-                        const kfsForProp = sortedKfs.filter(k => k.property === prop);
-                        if (kfsForProp.length === 0) return;
+                entityRefs.current[assetEntityId] = el
+                targetEntity.appendChild(el)
+            })
+        }
 
-                        kfsForProp.forEach((kf, idx) => {
-                            const animName = `animation__kf_${prop}_${idx}`;
-                            const prevKf = kfsForProp[idx - 1];
-                            let propertyName = prop;
+        // Multi-Target Support: Determine rendering targets
+        const finalTargets: TargetConfig[] = (() => {
+            // New multi-target mode
+            if (config.targets && config.targets.length > 0) {
+                return config.targets
+            }
+            // Legacy single-target mode
+            if (config.assets && config.assets.length > 0) {
+                return [{
+                    targetIndex: 0,
+                    name: 'Default',
+                    assets: config.assets
+                }]
+            }
+            return []
+        })()
 
-                            // Handle opacity animation differently for occlusion vs normal
-                            if (prop === 'opacity') {
-                                if (asset.type === 'occlusion') return; // Skip opacity for occlusion
-                                propertyName = 'model-opacity';
-                            }
+        console.log(`🎬 Image Tracking Preview: Rendering ${finalTargets.length} targets`)
 
-                            let startEvents = 'targetFound';
-                            if (idx > 0) {
-                                startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
-                            }
+        finalTargets.forEach(target => {
+            const targetEntity = document.createElement('a-entity')
+            targetEntity.setAttribute('mindar-image-target', `targetIndex: ${target.targetIndex}`)
 
-                            // Delay is mainly for the first keyframe to respect start time
-                            const delay = idx === 0 ? kf.time * 1000 : 0;
+            // Render assets for this target
+            let assetsToRender = target.assets && target.assets.length > 0 ? target.assets : []
 
-                            const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
-
-                            let fromAttr = '';
-                            if (idx === 0) {
-                                let fromValue = '';
-                                if (prop === 'position') fromValue = asset.position.join(' ');
-                                else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
-                                else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
-                                else if (prop === 'opacity') fromValue = '1';
-                                fromAttr = `from: ${fromValue};`;
-                            }
-
-                            const animValue = `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}; autoplay: false; loop: false;`
-                            el.setAttribute(animName, animValue)
-                        });
-                    });
+            // 1. Inheritance Logic
+            if (assetsToRender.length === 0 && target.extends !== undefined) {
+                const parent = config.targets?.find(t => t.targetIndex === target.extends)
+                if (parent && parent.assets && parent.assets.length > 0) {
+                    assetsToRender = parent.assets
                 }
             }
 
-            el.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
-            el.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
-            el.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
+            // 2. Fallback to Global Defaults
+            if (assetsToRender.length === 0) {
+                assetsToRender = config.default_assets || []
+            }
 
-            entityRefs.current[asset.id] = el
-            targetEntity.appendChild(el)
+            renderAssetsForTarget(targetEntity, assetsToRender, target.targetIndex)
+
+            // Target Found Listener
+            targetEntity.addEventListener('targetFound', (e) => {
+                if (e.target !== targetEntity) return
+                console.log(`🎯 Target ${target.targetIndex} Found!`)
+                setTargetFound(true)
+
+                // Emit targetFound to all child elements
+                assetsToRender.forEach(asset => {
+                    const uniqueId = `${asset.id}-${target.targetIndex}`
+                    const el = entityRefs.current[uniqueId]
+                    if (el) {
+                        (el as any).emit('targetFound', null, false)
+                    }
+                    if (asset.type === 'video' && asset.video_autoplay) {
+                        const videoId = `preview-video-${asset.id}`
+                        const video = document.getElementById(videoId) as HTMLVideoElement
+                        if (video) video.play()
+                    }
+                })
+            })
+
+            targetEntity.addEventListener('targetLost', () => {
+                console.log(`❌ Target ${target.targetIndex} Lost`)
+                // Only set lost if no other targets are tracked (to be improved)
+                setTargetFound(false)
+            })
+
+            scene.appendChild(targetEntity)
         })
-
-        scene.appendChild(targetEntity)
         containerRef.current.appendChild(scene)
         sceneRef.current = scene
 
@@ -562,30 +630,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             observerRef.current = null
         }
 
-        targetEntity.addEventListener('targetFound', (e) => {
-            // Prevent infinite loop from bubbling child events
-            if (e.target !== targetEntity) return
 
-            setTargetFound(true)
-
-            // Emit targetFound to all child elements to trigger animations
-            config.assets?.forEach(asset => {
-                const el = entityRefs.current[asset.id]
-                if (el) {
-                    // emit(name, detail, bubbles) - set bubbles to false
-                    ; (el as any).emit('targetFound', null, false)
-                }
-
-                // Also play video if autoplay
-                if (asset.type === 'video' && asset.video_autoplay) {
-                    const videoId = `asset-video-${asset.id}`
-                    const video = document.getElementById(videoId) as HTMLVideoElement
-                    if (video) video.play()
-                }
-            })
-        })
-
-        targetEntity.addEventListener('targetLost', () => setTargetFound(false))
 
         // Monitor for when video element is added by MindAR (observe entire subtree)
         const attachVideo = (video: HTMLVideoElement) => {

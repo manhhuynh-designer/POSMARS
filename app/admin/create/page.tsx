@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Sparkles, Target, Gamepad2, FileText, CheckCircle2, ToggleLeft, ToggleRight, Users, UserX } from 'lucide-react'
 
 type InteractionType = 'ar' | 'game'
 type ARTemplate = 'image_tracking' | 'ar_checkin' | 'face_filter'
@@ -11,16 +11,23 @@ type Template = ARTemplate | GameTemplate
 
 const TEMPLATES = {
     ar: [
-        { id: 'image_tracking', name: 'Image Tracking', desc: 'Quét poster → Overlay 3D', priority: 'P1' },
-        { id: 'ar_checkin', name: 'AR Check-in', desc: 'Chụp ảnh với frame branded', priority: 'P1' },
-        { id: 'face_filter', name: 'Face Filter', desc: 'Filter khuôn mặt', priority: 'P1' },
+        { id: 'image_tracking', name: 'Image Tracking', desc: 'Quét poster → Overlay 3D', priority: 'P1', icon: '📷' },
+        { id: 'ar_checkin', name: 'AR Check-in', desc: 'Chụp ảnh với frame branded', priority: 'P1', icon: '🤳' },
+        { id: 'face_filter', name: 'Face Filter', desc: 'Filter khuôn mặt', priority: 'P1', icon: '🎭' },
     ],
     game: [
-        { id: 'lucky_draw', name: 'Lucky Draw', desc: 'Vòng quay may mắn', priority: 'P1' },
-        { id: 'scratch_card', name: 'Scratch Card', desc: 'Cào thẻ trúng thưởng', priority: 'P2' },
-        { id: 'quiz', name: 'Quiz', desc: 'Trả lời câu hỏi', priority: 'P2' },
+        { id: 'lucky_draw', name: 'Lucky Draw', desc: 'Vòng quay may mắn', priority: 'P1', icon: '🎡' },
+        { id: 'scratch_card', name: 'Scratch Card', desc: 'Cào thẻ trúng thưởng', priority: 'P2', icon: '🎫' },
+        { id: 'quiz', name: 'Quiz', desc: 'Trả lời câu hỏi', priority: 'P2', icon: '❓' },
     ]
 }
+
+const STEP_INFO = [
+    { icon: Target, label: 'Thông tin' },
+    { icon: Gamepad2, label: 'Template' },
+    { icon: FileText, label: 'Form' },
+    { icon: CheckCircle2, label: 'Xác nhận' }
+]
 
 const DEFAULT_LEAD_FORM = {
     fields: [
@@ -57,6 +64,7 @@ export default function CreateProjectPage() {
         name: '',
         interaction_type: 'ar' as InteractionType,
         template: 'image_tracking' as Template,
+        enable_lead_form: true,
         lead_form_config: DEFAULT_LEAD_FORM,
         template_config: DEFAULT_TEMPLATE_CONFIGS['image_tracking']
     })
@@ -103,7 +111,7 @@ export default function CreateProjectPage() {
             name: formData.name,
             interaction_type: formData.interaction_type,
             template: formData.template,
-            lead_form_config: formData.lead_form_config,
+            lead_form_config: formData.enable_lead_form ? formData.lead_form_config : null,
             template_config: formData.template_config,
             is_active: true,
             config: {} // Legacy compatibility
@@ -131,43 +139,83 @@ export default function CreateProjectPage() {
     const templates = TEMPLATES[formData.interaction_type]
 
     return (
-        <div className="max-w-2xl mx-auto">
-            {/* Progress */}
-            <div className="flex items-center gap-2 mb-8">
-                {[1, 2, 3, 4].map(s => (
-                    <div key={s} className="flex items-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${s < step ? 'bg-green-500 text-white' :
-                            s === step ? 'bg-orange-500 text-white' :
-                                'bg-gray-200 text-gray-500'
-                            }`}>
-                            {s < step ? <Check size={16} /> : s}
-                        </div>
-                        {s < 4 && <div className={`w-12 h-0.5 ${s < step ? 'bg-green-500' : 'bg-gray-200'}`} />}
-                    </div>
-                ))}
+        <div className="max-w-3xl mx-auto">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-8">
+                <div className="p-3 bg-orange-500/10 rounded-2xl">
+                    <Sparkles className="text-orange-500" size={24} />
+                </div>
+                <div>
+                    <h1 className="text-2xl font-black text-white uppercase tracking-tight">Tạo Project Mới</h1>
+                    <p className="text-white/40 text-sm">Khởi tạo campaign AR/Game trong vài bước</p>
+                </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
+            {/* Progress Steps */}
+            <div className="flex items-center justify-between mb-10 bg-[#0c0c0c] rounded-2xl p-4 border border-white/5">
+                {STEP_INFO.map((s, i) => {
+                    const stepNum = i + 1
+                    const Icon = s.icon
+                    const isCompleted = stepNum < step
+                    const isCurrent = stepNum === step
+                    return (
+                        <div key={stepNum} className="flex items-center flex-1">
+                            <div className="flex flex-col items-center gap-2 flex-1">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${isCompleted
+                                    ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.2)]'
+                                    : isCurrent
+                                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.3)]'
+                                        : 'bg-white/5 text-white/20 border border-white/5'
+                                    }`}>
+                                    {isCompleted ? <Check size={20} /> : <Icon size={20} />}
+                                </div>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-green-400' : isCurrent ? 'text-orange-400' : 'text-white/20'
+                                    }`}>
+                                    {s.label}
+                                </span>
+                            </div>
+                            {stepNum < 4 && (
+                                <div className={`h-0.5 flex-1 mx-2 rounded-full transition-all duration-300 ${isCompleted ? 'bg-green-500/50' : 'bg-white/5'
+                                    }`} />
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+
+            <div className="bg-[#0c0c0c] rounded-[2rem] shadow-2xl border border-white/5 p-8">
                 {/* Step 1: Basic Info */}
                 {step === 1 && (
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-bold">Thông tin cơ bản</h2>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Subdomain (slug) *</label>
-                            <div className="flex items-center gap-2">
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-orange-500/10 rounded-xl">
+                                <Target className="text-orange-500" size={18} />
+                            </div>
+                            <h2 className="text-lg font-black text-white uppercase tracking-tight">Thông tin cơ bản</h2>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
+                                Subdomain (slug) *
+                            </label>
+                            <div className="flex items-center gap-3">
                                 <input
-                                    className="flex-1 border p-2 rounded font-mono"
+                                    className="flex-1 bg-black/40 border border-white/10 p-4 rounded-xl font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 focus:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all"
                                     value={formData.client_slug}
                                     onChange={e => setFormData({ ...formData, client_slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
                                     placeholder="samsung-tet-2024"
                                 />
-                                <span className="text-gray-500 text-sm">.posmars.vn</span>
+                                <span className="text-white/20 text-sm font-mono bg-white/5 px-4 py-4 rounded-xl border border-white/5">.posmars.vn</span>
                             </div>
+                            <p className="text-[10px] text-white/20 mt-2 italic">Chỉ chữ thường, số và dấu gạch ngang</p>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Tên Campaign *</label>
+
+                        <div className="space-y-2">
+                            <label className="block text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
+                                Tên Campaign *
+                            </label>
                             <input
-                                className="w-full border p-2 rounded"
+                                className="w-full bg-black/40 border border-white/10 p-4 rounded-xl text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 focus:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all"
                                 value={formData.name}
                                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                                 placeholder="Samsung Tết 2024"
@@ -178,60 +226,74 @@ export default function CreateProjectPage() {
 
                 {/* Step 2: Type & Template */}
                 {step === 2 && (
-                    <div className="space-y-6">
-                        <h2 className="text-xl font-bold">Loại hình & Template</h2>
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-orange-500/10 rounded-xl">
+                                <Gamepad2 className="text-orange-500" size={18} />
+                            </div>
+                            <h2 className="text-lg font-black text-white uppercase tracking-tight">Loại hình & Template</h2>
+                        </div>
 
                         {/* Type Selection */}
                         <div className="grid grid-cols-2 gap-4">
                             <button
                                 type="button"
                                 onClick={() => handleTypeChange('ar')}
-                                className={`p-4 border-2 rounded-lg text-left transition ${formData.interaction_type === 'ar'
-                                    ? 'border-orange-500 bg-orange-50'
-                                    : 'border-gray-200 hover:border-gray-300'
+                                className={`p-6 rounded-2xl text-left transition-all duration-300 group ${formData.interaction_type === 'ar'
+                                    ? 'bg-blue-500/10 border-2 border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.2)]'
+                                    : 'bg-white/5 border-2 border-white/5 hover:border-white/10'
                                     }`}
                             >
-                                <div className="text-2xl mb-2">📱</div>
-                                <div className="font-bold">AR</div>
-                                <div className="text-sm text-gray-500">Thực tế tăng cường</div>
+                                <div className="text-4xl mb-4">📱</div>
+                                <div className={`font-black uppercase tracking-tight text-lg ${formData.interaction_type === 'ar' ? 'text-blue-400' : 'text-white/60'
+                                    }`}>AR</div>
+                                <div className={`text-xs mt-1 ${formData.interaction_type === 'ar' ? 'text-blue-400/60' : 'text-white/30'
+                                    }`}>Thực tế tăng cường</div>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleTypeChange('game')}
-                                className={`p-4 border-2 rounded-lg text-left transition ${formData.interaction_type === 'game'
-                                    ? 'border-orange-500 bg-orange-50'
-                                    : 'border-gray-200 hover:border-gray-300'
+                                className={`p-6 rounded-2xl text-left transition-all duration-300 group ${formData.interaction_type === 'game'
+                                    ? 'bg-purple-500/10 border-2 border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)]'
+                                    : 'bg-white/5 border-2 border-white/5 hover:border-white/10'
                                     }`}
                             >
-                                <div className="text-2xl mb-2">🎮</div>
-                                <div className="font-bold">Game</div>
-                                <div className="text-sm text-gray-500">Gamification</div>
+                                <div className="text-4xl mb-4">🎮</div>
+                                <div className={`font-black uppercase tracking-tight text-lg ${formData.interaction_type === 'game' ? 'text-purple-400' : 'text-white/60'
+                                    }`}>Game</div>
+                                <div className={`text-xs mt-1 ${formData.interaction_type === 'game' ? 'text-purple-400/60' : 'text-white/30'
+                                    }`}>Gamification</div>
                             </button>
                         </div>
 
                         {/* Template Selection */}
                         <div>
-                            <label className="block text-sm font-medium mb-2">Chọn Template</label>
-                            <div className="space-y-2">
+                            <label className="block text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">
+                                Chọn Template
+                            </label>
+                            <div className="space-y-3">
                                 {templates.map(t => (
                                     <button
                                         key={t.id}
                                         type="button"
                                         onClick={() => handleTemplateChange(t.id as Template)}
-                                        className={`w-full p-3 border-2 rounded-lg text-left transition flex justify-between items-center ${formData.template === t.id
-                                            ? 'border-orange-500 bg-orange-50'
-                                            : 'border-gray-200 hover:border-gray-300'
+                                        className={`w-full p-5 rounded-2xl text-left transition-all duration-300 flex items-center gap-4 ${formData.template === t.id
+                                            ? 'bg-orange-500/10 border-2 border-orange-500/50 shadow-[0_0_20px_rgba(249,115,22,0.15)]'
+                                            : 'bg-white/5 border-2 border-white/5 hover:border-white/10'
                                             }`}
                                     >
-                                        <div>
-                                            <div className="font-medium">{t.name}</div>
-                                            <div className="text-sm text-gray-500">{t.desc}</div>
+                                        <div className="text-3xl">{t.icon}</div>
+                                        <div className="flex-1">
+                                            <div className={`font-bold ${formData.template === t.id ? 'text-orange-400' : 'text-white/80'
+                                                }`}>{t.name}</div>
+                                            <div className={`text-xs mt-0.5 ${formData.template === t.id ? 'text-orange-400/60' : 'text-white/30'
+                                                }`}>{t.desc}</div>
                                         </div>
-                                        <span className={`px-2 py-0.5 text-xs rounded ${t.priority === 'P1' ? 'bg-green-100 text-green-700' :
-                                            t.priority === 'P2' ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-gray-100 text-gray-600'
+                                        <span className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${t.priority === 'P1'
+                                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                            : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                                             }`}>
-                                            {t.priority === 'P1' ? 'Sẵn sàng' : 'Đang phát triển'}
+                                            {t.priority === 'P1' ? 'Sẵn sàng' : 'Beta'}
                                         </span>
                                     </button>
                                 ))}
@@ -242,82 +304,190 @@ export default function CreateProjectPage() {
 
                 {/* Step 3: Lead Form Config */}
                 {step === 3 && (
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-bold">Cấu hình Form Thu thập</h2>
-                        <p className="text-sm text-gray-500">Form builder chi tiết sẽ có trong trang Edit sau khi tạo project.</p>
-
-                        <div className="bg-gray-50 rounded-lg p-4">
-                            <h3 className="font-medium mb-2">Form mặc định:</h3>
-                            <ul className="text-sm text-gray-600 space-y-1">
-                                <li>• Họ và tên (bắt buộc)</li>
-                                <li>• Số điện thoại (bắt buộc)</li>
-                                <li>• Checkbox đồng ý điều khoản</li>
-                            </ul>
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-orange-500/10 rounded-xl">
+                                <FileText className="text-orange-500" size={18} />
+                            </div>
+                            <h2 className="text-lg font-black text-white uppercase tracking-tight">Thu thập thông tin</h2>
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Nút Gửi</label>
-                            <input
-                                className="w-full border p-2 rounded"
-                                value={formData.lead_form_config.submit_text}
-                                onChange={e => setFormData({
-                                    ...formData,
-                                    lead_form_config: { ...formData.lead_form_config, submit_text: e.target.value }
-                                })}
-                            />
+                        {/* Toggle Enable/Disable */}
+                        <div
+                            onClick={() => setFormData({ ...formData, enable_lead_form: !formData.enable_lead_form })}
+                            className={`p-6 rounded-2xl cursor-pointer transition-all duration-300 flex items-center gap-5 ${formData.enable_lead_form
+                                    ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
+                                    : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+                                }`}
+                        >
+                            <div className={`p-3 rounded-xl transition-all ${formData.enable_lead_form
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-white/10 text-white/30'
+                                }`}>
+                                {formData.enable_lead_form ? <Users size={24} /> : <UserX size={24} />}
+                            </div>
+                            <div className="flex-1">
+                                <div className={`font-bold text-lg ${formData.enable_lead_form ? 'text-green-400' : 'text-white/60'
+                                    }`}>
+                                    {formData.enable_lead_form ? 'Thu thập thông tin khách hàng' : 'Không thu thập thông tin'}
+                                </div>
+                                <div className={`text-sm mt-1 ${formData.enable_lead_form ? 'text-green-400/60' : 'text-white/30'
+                                    }`}>
+                                    {formData.enable_lead_form
+                                        ? 'Khách hàng sẽ điền form trước khi trải nghiệm'
+                                        : 'Khách hàng trải nghiệm ngay mà không cần đăng ký'
+                                    }
+                                </div>
+                            </div>
+                            <div className={`transition-all ${formData.enable_lead_form ? 'text-green-400' : 'text-white/20'
+                                }`}>
+                                {formData.enable_lead_form
+                                    ? <ToggleRight size={40} strokeWidth={1.5} />
+                                    : <ToggleLeft size={40} strokeWidth={1.5} />
+                                }
+                            </div>
                         </div>
+
+                        {/* Form Config (only show when enabled) */}
+                        {formData.enable_lead_form && (
+                            <>
+                                <p className="text-white/40 text-sm">Form builder chi tiết sẽ có trong trang Edit sau khi tạo project.</p>
+
+                                <div className="bg-black/40 rounded-2xl p-6 border border-white/5">
+                                    <h3 className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Form mặc định</h3>
+                                    <ul className="text-sm text-white/60 space-y-3">
+                                        <li className="flex items-center gap-3">
+                                            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                                            Họ và tên (bắt buộc)
+                                        </li>
+                                        <li className="flex items-center gap-3">
+                                            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                                            Số điện thoại (bắt buộc)
+                                        </li>
+                                        <li className="flex items-center gap-3">
+                                            <span className="w-2 h-2 rounded-full bg-white/20"></span>
+                                            Checkbox đồng ý điều khoản
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">
+                                        Text nút Gửi
+                                    </label>
+                                    <input
+                                        className="w-full bg-black/40 border border-white/10 p-4 rounded-xl text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 focus:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all"
+                                        value={formData.lead_form_config.submit_text}
+                                        onChange={e => setFormData({
+                                            ...formData,
+                                            lead_form_config: { ...formData.lead_form_config, submit_text: e.target.value }
+                                        })}
+                                    />
+                                </div>
+                            </>
+                        )}
+
+                        {/* No form info */}
+                        {!formData.enable_lead_form && (
+                            <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-5 flex items-start gap-4">
+                                <div className="text-2xl">⚡</div>
+                                <div>
+                                    <div className="text-yellow-400 font-bold text-sm mb-1">Trải nghiệm nhanh</div>
+                                    <div className="text-yellow-400/60 text-sm">Khách hàng sẽ được trải nghiệm AR/Game ngay lập tức mà không cần điền thông tin. Phù hợp cho các sự kiện public hoặc demo nhanh.</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {/* Step 4: Review & Create */}
                 {step === 4 && (
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-bold">Xác nhận & Tạo</h2>
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-green-500/10 rounded-xl">
+                                <CheckCircle2 className="text-green-500" size={18} />
+                            </div>
+                            <h2 className="text-lg font-black text-white uppercase tracking-tight">Xác nhận & Tạo</h2>
+                        </div>
 
-                        <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Subdomain:</span>
-                                <span className="font-mono">{formData.client_slug}.posmars.vn</span>
+                        <div className="bg-black/40 rounded-2xl p-6 border border-white/5 space-y-4">
+                            <div className="flex justify-between items-center py-3 border-b border-white/5">
+                                <span className="text-white/40 text-sm">Subdomain</span>
+                                <span className="font-mono text-orange-400 bg-orange-500/10 px-3 py-1.5 rounded-lg text-sm">{formData.client_slug}.posmars.vn</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Tên:</span>
-                                <span>{formData.name}</span>
+                            <div className="flex justify-between items-center py-3 border-b border-white/5">
+                                <span className="text-white/40 text-sm">Tên Campaign</span>
+                                <span className="text-white font-bold">{formData.name}</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Loại:</span>
-                                <span>{formData.interaction_type === 'ar' ? 'AR' : 'Game'}</span>
+                            <div className="flex justify-between items-center py-3 border-b border-white/5">
+                                <span className="text-white/40 text-sm">Loại hình</span>
+                                <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest ${formData.interaction_type === 'ar'
+                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                    }`}>
+                                    {formData.interaction_type === 'ar' ? 'AR' : 'Game'}
+                                </span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Template:</span>
-                                <span>{templates.find(t => t.id === formData.template)?.name}</span>
+                            <div className="flex justify-between items-center py-3 border-b border-white/5">
+                                <span className="text-white/40 text-sm">Template</span>
+                                <span className="text-white/80">{templates.find(t => t.id === formData.template)?.name}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-3">
+                                <span className="text-white/40 text-sm">Thu thập Lead</span>
+                                <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest ${formData.enable_lead_form
+                                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                        : 'bg-white/5 text-white/40 border border-white/10'
+                                    }`}>
+                                    {formData.enable_lead_form ? 'Có' : 'Không'}
+                                </span>
                             </div>
                         </div>
 
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                            💡 Sau khi tạo, bạn sẽ được chuyển đến trang Edit để upload assets và cấu hình chi tiết.
+                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-5 flex items-start gap-4">
+                            <div className="text-2xl">💡</div>
+                            <div>
+                                <div className="text-blue-400 font-bold text-sm mb-1">Bước tiếp theo</div>
+                                <div className="text-blue-400/60 text-sm">Sau khi tạo, bạn sẽ được chuyển đến trang Edit để upload assets và cấu hình chi tiết.</div>
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {/* Navigation */}
-                <div className="flex justify-between mt-8 pt-4 border-t">
+                <div className="flex justify-between mt-10 pt-6 border-t border-white/5">
                     {step > 1 ? (
-                        <button onClick={handleBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+                        <button
+                            onClick={handleBack}
+                            className="flex items-center gap-2 text-white/40 hover:text-white px-5 py-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all font-bold text-sm"
+                        >
                             <ArrowLeft size={16} /> Quay lại
                         </button>
                     ) : <div />}
 
                     {step < 4 ? (
-                        <button onClick={handleNext} className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600">
+                        <button
+                            onClick={handleNext}
+                            className="flex items-center gap-2 bg-orange-500 text-white px-6 py-3 rounded-xl hover:bg-orange-600 shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:shadow-[0_0_40px_rgba(249,115,22,0.4)] transition-all font-black uppercase text-xs tracking-widest"
+                        >
                             Tiếp tục <ArrowRight size={16} />
                         </button>
                     ) : (
                         <button
                             onClick={handleSubmit}
                             disabled={loading}
-                            className="flex items-center gap-2 bg-green-500 text-white px-6 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50"
+                            className="flex items-center gap-2 bg-green-500 text-white px-8 py-3 rounded-xl hover:bg-green-600 shadow-[0_0_30px_rgba(34,197,94,0.3)] hover:shadow-[0_0_40px_rgba(34,197,94,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed font-black uppercase text-xs tracking-widest"
                         >
-                            {loading ? 'Đang tạo...' : 'Tạo Project'}
+                            {loading ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Đang tạo...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles size={16} />
+                                    Tạo Project
+                                </>
+                            )}
                         </button>
                     )}
                 </div>

@@ -39,6 +39,15 @@ export default function ClientPage() {
             setProject(null)
         } else {
             setProject(data)
+
+            // Check if lead form is disabled - skip directly to interaction
+            const hasLeadForm = data.lead_form_config &&
+                data.lead_form_config.fields &&
+                data.lead_form_config.fields.length > 0
+
+            if (!hasLeadForm) {
+                setStep('interaction')
+            }
         }
         setLoading(false)
     }
@@ -61,7 +70,12 @@ export default function ClientPage() {
     }
 
     const handleRestart = () => {
-        setStep('lead_form')
+        // Check if lead form is enabled for restart logic
+        const hasLeadForm = project?.lead_form_config &&
+            project.lead_form_config.fields &&
+            project.lead_form_config.fields.length > 0
+
+        setStep(hasLeadForm ? 'lead_form' : 'interaction')
         setResult(null)
     }
 
@@ -89,16 +103,21 @@ export default function ClientPage() {
 
     const { interaction_type, template, lead_form_config, template_config, asset_url, marker_url, use_custom_code, custom_html, custom_script } = project
 
+    // Check if lead form is enabled
+    const hasLeadForm = lead_form_config &&
+        lead_form_config.fields &&
+        lead_form_config.fields.length > 0
+
     // P2/P3 templates show placeholder
     const placeholderTemplates = ['world_tracking', 'scratch_card', 'quiz', 'catcher']
 
     return (
         <Suspense fallback={<div>Loading...</div>}>
-            {/* Step 1: Lead Form */}
-            {step === 'lead_form' && (
+            {/* Step 1: Lead Form (only if enabled) */}
+            {step === 'lead_form' && hasLeadForm && (
                 <LeadForm
                     projectId={project.id}
-                    config={lead_form_config || { fields: [], submit_text: 'Tiếp tục', consent_text: 'Tôi đồng ý' }}
+                    config={lead_form_config}
                     onComplete={handleLeadComplete}
                 />
             )}

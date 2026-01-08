@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Save, ExternalLink, Upload, BarChart2, Settings } from 'lucide-react'
+import { ArrowLeft, Save, ExternalLink, Upload, BarChart2, Settings, Users, UserX, ToggleLeft, ToggleRight } from 'lucide-react'
 import Link from 'next/link'
 import LeadFormBuilder from '@/components/admin/LeadFormBuilder'
 import ResultScreenEditor from '@/components/admin/ResultScreenEditor'
@@ -313,13 +313,82 @@ export default function EditProjectPage() {
                     <div className="space-y-8">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="w-1.5 h-6 bg-orange-500 rounded-full" />
-                            <h3 className="font-black text-white uppercase tracking-tighter">Cấu hình Lead Form</h3>
+                            <h3 className="font-black text-white uppercase tracking-tighter">Thu thập thông tin khách hàng</h3>
                         </div>
-                        <LeadFormBuilder
-                            initialConfig={formData.lead_form_config}
-                            onChange={config => setFormData({ ...formData, lead_form_config: config })}
-                            onUpload={async (file, path) => await uploadFile(file, path)}
-                        />
+
+                        {/* Toggle Enable/Disable Lead Form */}
+                        <div
+                            onClick={() => {
+                                if (formData.lead_form_config) {
+                                    // Disable - store current config temporarily and set to null
+                                    setFormData({ ...formData, lead_form_config: null })
+                                } else {
+                                    // Enable - restore default config
+                                    setFormData({
+                                        ...formData,
+                                        lead_form_config: {
+                                            fields: [
+                                                { id: 'name', type: 'text', label: 'Họ và tên', required: true },
+                                                { id: 'phone', type: 'tel', label: 'Số điện thoại', required: true }
+                                            ],
+                                            submit_text: 'Tiếp tục',
+                                            consent_text: 'Tôi đồng ý với điều khoản sử dụng'
+                                        }
+                                    })
+                                }
+                            }}
+                            className={`p-6 rounded-2xl cursor-pointer transition-all duration-300 flex items-center gap-5 ${formData.lead_form_config
+                                    ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
+                                    : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+                                }`}
+                        >
+                            <div className={`p-3 rounded-xl transition-all ${formData.lead_form_config
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-white/10 text-white/30'
+                                }`}>
+                                {formData.lead_form_config ? <Users size={24} /> : <UserX size={24} />}
+                            </div>
+                            <div className="flex-1">
+                                <div className={`font-bold text-lg ${formData.lead_form_config ? 'text-green-400' : 'text-white/60'
+                                    }`}>
+                                    {formData.lead_form_config ? 'Thu thập thông tin khách hàng' : 'Không thu thập thông tin'}
+                                </div>
+                                <div className={`text-sm mt-1 ${formData.lead_form_config ? 'text-green-400/60' : 'text-white/30'
+                                    }`}>
+                                    {formData.lead_form_config
+                                        ? 'Khách hàng sẽ điền form trước khi trải nghiệm AR/Game'
+                                        : 'Khách hàng trải nghiệm ngay mà không cần đăng ký'
+                                    }
+                                </div>
+                            </div>
+                            <div className={`transition-all ${formData.lead_form_config ? 'text-green-400' : 'text-white/20'
+                                }`}>
+                                {formData.lead_form_config
+                                    ? <ToggleRight size={40} strokeWidth={1.5} />
+                                    : <ToggleLeft size={40} strokeWidth={1.5} />
+                                }
+                            </div>
+                        </div>
+
+                        {/* Show Lead Form Builder only when enabled */}
+                        {formData.lead_form_config && (
+                            <LeadFormBuilder
+                                initialConfig={formData.lead_form_config}
+                                onChange={config => setFormData({ ...formData, lead_form_config: config })}
+                                onUpload={async (file, path) => await uploadFile(file, path)}
+                            />
+                        )}
+
+                        {/* No form info */}
+                        {!formData.lead_form_config && (
+                            <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-6 flex items-start gap-4">
+                                <div className="text-3xl">⚡</div>
+                                <div>
+                                    <div className="text-yellow-400 font-bold text-base mb-2">Trải nghiệm nhanh</div>
+                                    <div className="text-yellow-400/60 text-sm leading-relaxed">Khách hàng sẽ được trải nghiệm AR/Game ngay lập tức mà không cần điền thông tin. Phù hợp cho các sự kiện public, demo nhanh, hoặc khi bạn không cần thu thập data khách hàng.</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

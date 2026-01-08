@@ -11,9 +11,14 @@ export default function ClientWrapper({ project }: { project: any }) {
     const searchParams = useSearchParams()
     const pos_id = searchParams.get('pos_id') || ''
 
+    // Check if lead form is enabled (not null and has fields)
+    const hasLeadForm = project.lead_form_config &&
+        project.lead_form_config.fields &&
+        project.lead_form_config.fields.length > 0
+
     // State to track if lead is submitted
-    // In real app, might check localStorage or session to skip form if already submitted
-    const [submitted, setSubmitted] = useState(false)
+    // Skip form if lead form is disabled
+    const [submitted, setSubmitted] = useState(!hasLeadForm)
 
     if (submitted) {
         return <ARView project={project} />
@@ -35,3 +40,4 @@ export default function ClientWrapper({ project }: { project: any }) {
         </div>
     )
 }
+
