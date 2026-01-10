@@ -4,13 +4,16 @@ import {
     Plus, Trash2, GripVertical, Upload, Image as ImageIcon, Eye, EyeOff,
     Settings, Layers, Video, Box, Activity, ChevronRight, HelpCircle,
     RefreshCw, Play, SkipForward, Sun, Maximize, Smartphone,
-    Camera, Check, Sparkles, Loader2, Clock, Minus, ExternalLink, Globe, Scan, MoreVertical, Copy, Link
+    Camera, Check, Sparkles, Loader2, Clock, Minus, ExternalLink, Globe, Scan, MoreVertical, Copy, Link, AlertCircle
 } from 'lucide-react'
 
 const FaceFilterPreview = lazy(() => import('./FaceFilterPreview'))
 const ImageTrackingPreview = lazy(() => import('./ImageTrackingPreview'))
 const StudioPreview = lazy(() => import('./StudioPreview'))
 import ProMixerTimeline from './ProMixerTimeline'
+import { parseMindFile } from '@/lib/mind-parser'
+import { processImageForCompiler } from '@/lib/image-processor'
+import { compileFiles } from '@/lib/mind-compiler'
 
 // Lucky Draw Types
 export interface Prize {
@@ -53,7 +56,7 @@ export interface VideoKeyframe {
 export interface ARAsset {
     id: string
     name: string
-    type: '3d' | 'video' | 'occlusion'
+    type: '3d' | 'video' | 'occlusion' | 'image'
     url: string
     scale: number
     position: [number, number, number]
@@ -67,6 +70,10 @@ export interface ARAsset {
     animation_duration?: number
     loop_animation?: boolean
     occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane'
+
+    // Image settings
+    image_width?: number  // Aspect ratio width
+    image_height?: number // Aspect ratio height
 
     // 3D Animation settings
     animation_mode?: 'auto' | 'loop_clips' | 'tap_to_play'
@@ -138,6 +145,16 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
     const [selectedKeyframeIds, setSelectedKeyframeIds] = useState<string[]>([])
     const [previewMode, setPreviewMode] = useState<'ar' | 'studio'>('ar')
 
+    // Smart Compiler State
+    const [isCompiling, setIsCompiling] = useState(false)
+    const [compileProgress, setCompileProgress] = useState(0)
+    const [compileStatus, setCompileStatus] = useState<string>('')
+    const smartCompileInputRef = useRef<HTMLInputElement>(null)
+    const addMoreInputRef = useRef<HTMLInputElement>(null)
+    const [showCompileModeModal, setShowCompileModeModal] = useState(false)
+    const [pendingCompileFiles, setPendingCompileFiles] = useState<File[]>([])
+    const [compileAppendMode, setCompileAppendMode] = useState(false) // false = replace, true = append
+
     useEffect(() => {
         onChange(config)
     }, [config])
@@ -182,6 +199,215 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
             return null
         }
     }
+
+    // Specialized handler for .mind file upload with auto-detect target count
+    const handleMarkerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        try {
+            setUploadingField('marker_url')
+
+            // Read file as ArrayBuffer for parsing
+            const buffer = await file.arrayBuffer()
+            const { targetCount, version } = parseMindFile(buffer)
+
+            // Upload the file
+            const url = await onUpload(file, `markers/${Date.now()}_${file.name}`)
+
+            // Update config with marker URL
+            setConfig(prev => {
+                const newConfig = { ...prev, marker_url: url }
+
+                // Auto-generate targets if count detected
+                if (targetCount > 0) {
+                    const existingTargets = prev.targets || []
+
+                    // Only auto-generate if no targets exist or user confirms
+                    if (existingTargets.length === 0 || confirm(`Phát hiện ${targetCount} targets trong file .mind.\nBạn có muốn tự động tạo ${targetCount} targets mới không?\n\n(Chọn Cancel để giữ nguyên targets hiện tại)`)) {
+                        const newTargets: TargetConfig[] = Array.from({ length: targetCount }, (_, i) => ({
+                            targetIndex: i,
+                            name: `Target ${i}`,
+                            assets: []
+                        }))
+                        newConfig.targets = newTargets
+                        newConfig.max_track = Math.min(targetCount, 3) // Default max_track
+
+                        // Note: Selection reset will happen naturally when targets change
+                        console.log(`✅ Auto-generated ${targetCount} targets from .mind file (version ${version})`)
+                    }
+                }
+
+                return newConfig
+            })
+
+            setUploadingField(null)
+        } catch (error) {
+            console.error('Marker upload error:', error)
+            setUploadingField(null)
+            alert('Upload thất bại')
+        }
+    }
+
+    // Smart Compiler Handler - Replace Mode (replaces all targets)
+    const handleSmartCompile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const fileList = e.target.files
+        if (!fileList || fileList.length === 0) return
+        const files = Array.from(fileList)
+
+        // Store files and show modal - REPLACE mode
+        setPendingCompileFiles(files)
+        setCompileAppendMode(false)
+        setShowCompileModeModal(true)
+
+        // Reset input so same file can be selected again
+        if (smartCompileInputRef.current) {
+            smartCompileInputRef.current.value = ''
+        }
+    }
+
+    // Add More Targets Handler - Append Mode (adds to existing targets)
+    const handleAddMoreTargets = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const fileList = e.target.files
+        if (!fileList || fileList.length === 0) return
+        const files = Array.from(fileList)
+
+        // Store files and show modal - APPEND mode
+        setPendingCompileFiles(files)
+        setCompileAppendMode(true)
+        setShowCompileModeModal(true)
+
+        // Reset input so same file can be selected again
+        if (addMoreInputRef.current) {
+            addMoreInputRef.current.value = ''
+        }
+    }
+
+    // Actual Compile Logic - Called from modal
+    const startCompile = async (useSmartMode: boolean) => {
+        setShowCompileModeModal(false)
+        const files = pendingCompileFiles
+        if (files.length === 0) return
+
+        try {
+            setIsCompiling(true)
+            setCompileProgress(0)
+
+            let processedFiles: File[];
+            let targetsPerImage: number;
+
+            if (useSmartMode) {
+                // SMART MODE: 5 angles per image
+                setCompileStatus(`Đang xử lý ${files.length} ảnh (Tạo biến thể 5 góc)...`)
+                const { processFilesForCompiler } = await import('@/lib/image-processor')
+                processedFiles = await processFilesForCompiler(files)
+                targetsPerImage = 5;
+            } else {
+                // QUICK MODE: 1 target per image (just optimize, no variations)
+                setCompileStatus(`Đang xử lý ${files.length} ảnh (Quick Mode)...`)
+                const { optimizeImageFile } = await import('@/lib/image-processor')
+                processedFiles = await Promise.all(files.map(f => optimizeImageFile(f)))
+                targetsPerImage = 1;
+            }
+
+            // 2. Compiling
+            setCompileStatus(`Đang training Neural Network (${processedFiles.length} targets)...`)
+            await new Promise(r => setTimeout(r, 100))
+
+            const blob = await compileFiles(processedFiles, (progress) => {
+                setCompileProgress(Math.round(progress))
+            })
+
+            // 3. Uploading .mind file
+            setCompileStatus('Đang upload file .mind...')
+            const mindFile = new File([blob], `smart_batch_${Date.now()}.mind`, { type: 'application/octet-stream' })
+            const url = await onUpload(mindFile, `markers/${mindFile.name}`)
+
+            // 4. Generate and Upload Thumbnails for ALL processed files (including perspectives)
+            setCompileStatus('Đang tạo thumbnails...')
+            const { generateThumbnail } = await import('@/lib/image-processor')
+            const thumbnailUrls: string[] = []
+            for (let i = 0; i < processedFiles.length; i++) {
+                try {
+                    const thumbFile = await generateThumbnail(processedFiles[i])
+                    const thumbUrl = await onUpload(thumbFile, `thumbnails/${thumbFile.name}`)
+                    thumbnailUrls.push(thumbUrl)
+                } catch (err) {
+                    console.error('Thumbnail generation failed for:', processedFiles[i].name, err)
+                    thumbnailUrls.push('') // Empty if failed
+                }
+            }
+
+            // 5. Auto Config
+            setConfig(prev => {
+                const newTargets: TargetConfig[] = []
+
+                // Calculate base index for append mode
+                const existingCount = compileAppendMode ? (prev.targets?.length || 0) : 0
+                const existingTargets = compileAppendMode ? (prev.targets || []) : []
+
+                files.forEach((originalFile, fileIdx) => {
+                    const baseName = originalFile.name.split('.')[0]
+
+                    if (targetsPerImage === 5) {
+                        // SMART MODE: 5 targets per image with inheritance
+                        const baseIndex = existingCount + fileIdx * 5
+                        const thumbBaseIdx = fileIdx * 5 // Index in thumbnailUrls array
+
+                        // Main target (0°)
+                        newTargets.push({
+                            targetIndex: baseIndex,
+                            name: baseName,
+                            assets: [],
+                            thumbnail: thumbnailUrls[thumbBaseIdx] || ''
+                        })
+                        // Perspective targets (Left, Right, Top, Bottom)
+                        const angles = ['Left', 'Right', 'Top', 'Bottom']
+                        angles.forEach((angle, i) => {
+                            newTargets.push({
+                                targetIndex: baseIndex + i + 1,
+                                name: `${baseName} (${angle})`,
+                                assets: [],
+                                extends: baseIndex,
+                                thumbnail: thumbnailUrls[thumbBaseIdx + i + 1] || '' // Each angle gets its own thumbnail
+                            })
+                        })
+                    } else {
+                        // QUICK MODE: 1 target per image
+                        newTargets.push({
+                            targetIndex: existingCount + fileIdx,
+                            name: baseName,
+                            assets: [],
+                            thumbnail: thumbnailUrls[fileIdx] || ''
+                        })
+                    }
+                })
+
+                // Combine: existing (if append) + new
+                const finalTargets = [...existingTargets, ...newTargets]
+
+                return {
+                    ...prev,
+                    marker_url: url, // Note: In append mode, this replaces the old .mind file
+                    targets: finalTargets,
+                    max_track: Math.min(finalTargets.length, 3)
+                }
+            })
+
+            setIsCompiling(false)
+            setCompileStatus('')
+            setPendingCompileFiles([])
+            const mode = targetsPerImage === 5 ? 'Smart' : 'Quick'
+            alert(`${mode} Compile thành công! Đã tạo ${processedFiles.length} targets từ ${files.length} ảnh.`)
+
+        } catch (error) {
+            console.error('Smart Compile Failed:', error)
+            setIsCompiling(false)
+            setCompileStatus('')
+            alert('Có lỗi xảy ra khi Smart Compile')
+        }
+    }
+
 
     // Lucky Draw: Add Prize
     const addPrize = () => {
@@ -594,7 +820,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
         )
     }
 
@@ -1132,6 +1358,10 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         const [selectedTargetIndex, setSelectedTargetIndex] = useState(0)
         const [menuOpenIndex, setMenuOpenIndex] = useState<number | null>(null)
         const [timelineZoom, setTimelineZoom] = useState(100)
+        // Clone/Inherit Modal State
+        const [showCloneInheritModal, setShowCloneInheritModal] = useState(false)
+        const [cloneInheritMode, setCloneInheritMode] = useState<'clone' | 'inherit'>('clone')
+        const [pendingActionTargetIndex, setPendingActionTargetIndex] = useState<number>(0)
 
         // Initialize targets if missing (Migration/Init)
         useEffect(() => {
@@ -1223,49 +1453,60 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         }
 
         const handleClone = (targetIndex: number) => {
-            const parentStr = prompt('Clone assets from Target Index (or -1 for Global):')
-            if (parentStr === null) return
-            const parentIdx = parseInt(parentStr)
-            if (isNaN(parentIdx)) return
-
-            let assetsToClone: ARAsset[] = []
-            if (parentIdx === -1) {
-                assetsToClone = config.default_assets || []
-            } else {
-                const parent = config.targets?.find((t: any) => t.targetIndex === parentIdx)
-                assetsToClone = parent?.assets || []
-            }
-
-            // Deep copy assets
-            const newAssets = JSON.parse(JSON.stringify(assetsToClone))
-            // Regenerate IDs
-            newAssets.forEach((a: ARAsset) => a.id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
-
-            updateTarget(targetIndex, { assets: newAssets, extends: undefined })
+            setPendingActionTargetIndex(targetIndex)
+            setCloneInheritMode('clone')
+            setShowCloneInheritModal(true)
             setMenuOpenIndex(null)
         }
 
         const handleInherit = (targetIndex: number) => {
-            const parentStr = prompt('Inherit content from Target Index (or -1 for Global):')
-            if (parentStr === null) return
-            const parentIdx = parseInt(parentStr)
-            if (isNaN(parentIdx)) return
-
-            // Check self-reference
-            if (config.targets?.[targetIndex]?.targetIndex === parentIdx) {
-                alert('Cannot inherit from self!')
-                return
-            }
-
-            updateTarget(targetIndex, { extends: parentIdx, assets: [] })
+            setPendingActionTargetIndex(targetIndex)
+            setCloneInheritMode('inherit')
+            setShowCloneInheritModal(true)
             setMenuOpenIndex(null)
         }
 
+        const executeCloneInherit = (parentIdx: number) => {
+            setShowCloneInheritModal(false)
+            const targetIdx = pendingActionTargetIndex
+
+            // Check self-reference
+            if (config.targets?.[targetIdx]?.targetIndex === parentIdx) {
+                alert('Không thể chọn chính target này!')
+                return
+            }
+
+            if (cloneInheritMode === 'clone') {
+                // Clone: Copy assets
+                let assetsToClone: ARAsset[] = []
+                if (parentIdx === -1) {
+                    assetsToClone = config.default_assets || []
+                } else {
+                    const parent = config.targets?.find((t: any) => t.targetIndex === parentIdx)
+                    assetsToClone = parent?.assets || []
+                }
+
+                if (assetsToClone.length === 0) {
+                    alert('Target nguồn không có assets!')
+                    return
+                }
+
+                // Deep copy assets
+                const newAssets = JSON.parse(JSON.stringify(assetsToClone))
+                // Regenerate IDs
+                newAssets.forEach((a: ARAsset) => a.id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
+                updateTarget(targetIdx, { assets: newAssets, extends: undefined })
+            } else {
+                // Inherit: Link to parent
+                updateTarget(targetIdx, { extends: parentIdx, assets: [] })
+            }
+        }
+
         // Asset Management (Scoped to Selected Target)
-        const addAsset = (type: '3d' | 'video' | 'occlusion') => {
+        const addAsset = (type: '3d' | 'video' | 'occlusion' | 'image') => {
             const newAsset: ARAsset = {
                 id: `asset-${Date.now()}`,
-                name: type === '3d' ? 'New 3D Model' : (type === 'occlusion' ? 'New Occlusion' : 'New Video'),
+                name: type === '3d' ? 'New 3D Model' : (type === 'occlusion' ? 'New Occlusion' : (type === 'image' ? 'New Image' : 'New Video')),
                 type,
                 url: '',
                 scale: 1,
@@ -1273,7 +1514,9 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 rotation: [0, 0, 0],
                 video_autoplay: true,
                 video_loop: true,
-                occlusion_shape: 'model'
+                occlusion_shape: 'model',
+                image_width: 1,
+                image_height: 1
             }
 
             const updatedAssets = [...currentAssets, newAsset]
@@ -1336,258 +1579,243 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 <div className="flex-1 space-y-8">
 
                     {/* -1. Marker Configuration */}
-                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl p-4">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <Scan size={18} className="text-blue-500" />
-                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Cấu hình Marker</h3>
-                            </div>
-                            <a
-                                href="https://hiukim.github.io/mind-ar-js-doc/tools/compile"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 border border-cyan-500/20 text-white rounded-lg text-[10px] font-black hover:from-cyan-500 hover:to-blue-500 transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                            >
-                                <ExternalLink size={14} /> MindAR Compiler
-                            </a>
-                        </div>
-                        <div className="bg-[#1a1a1a] p-4 rounded-xl border border-white/10 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-white/5 rounded-lg flex items-center justify-center border border-white/5">
-                                {config.marker_url ? <Check size={24} className="text-green-500" /> : <Upload size={24} className="text-white/40" />}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-xs font-bold text-white uppercase tracking-wider mb-1">Marker File (.mind)</p>
-                                <p className="text-[10px] text-white/40 truncate max-w-[200px]">{config.marker_url || 'Chưa có file nào'}</p>
-                            </div>
-                            <label className={`px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all active:scale-95 ${uploadingField === 'marker_url' ? 'opacity-50' : ''}`}>
-                                {uploadingField === 'marker_url' ? 'Uploading...' : 'Upload'}
-                                <input
-                                    type="file"
-                                    disabled={uploadingField === 'marker_url'}
-                                    className="hidden"
-                                    accept=".mind"
-                                    onChange={(e) => handleFileUpload(e, 'marker_url', 'marker_url')}
-                                />
-                            </label>
-                        </div>
-                    </section>
+                    {/* Unified AR Space Configuration */}
+                    <section className="bg-[#121212] border border-white/5 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden flex flex-col min-h-[600px] border-l-4 border-l-purple-500">
 
-                    {/* 0. Target Manager */}
-                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl">
-                        <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <ImageIcon size={18} className="text-pink-500" />
-                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Quản lý Targets</h3>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[9px] font-black uppercase text-white/40 tracking-widest bg-white/5 px-2 py-1 rounded-lg border border-white/5">
-                                    {(config.targets?.length || 0)} / {config.max_track || 3}
-                                </span>
-                                <button
-                                    onClick={addTarget}
-                                    disabled={(config.targets?.length || 0) >= 100}
-                                    className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-pink-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <Plus size={14} /> Target
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="p-2 max-h-[250px] overflow-y-auto custom-scrollbar">
-                            <div className="grid grid-cols-1 gap-2">
-                                {/* Global Defaults */}
-                                <div
-                                    onClick={() => { setSelectedTargetIndex(-1); setSelectedAssetId(null); }}
-                                    className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedTargetIndex === -1
-                                        ? 'bg-[#1a1a1a] border border-pink-500/50 shadow-[0_0_20px_rgba(236,72,153,0.1)]'
-                                        : 'hover:bg-white/5 border border-transparent'
-                                        }`}
-                                >
-                                    <div className="flex items-center gap-3 flex-1">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 ${selectedTargetIndex === -1 ? 'bg-pink-500 text-white' : 'bg-white/5 text-white/40'}`}>
-                                            <Globe size={18} />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-black uppercase tracking-tight text-white mb-0.5">Global Defaults</p>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest bg-white/5 px-1.5 py-0.5 rounded">
-                                                    Fallback
-                                                </span>
-                                                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">
-                                                    {config.default_assets?.length || 0} Assets
-                                                </p>
-                                            </div>
-                                        </div>
+                        {/* 1. Header & Marker Actions */}
+                        <div className="p-6 border-b border-white/5 bg-gradient-to-r from-purple-500/5 to-transparent flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-black text-white uppercase tracking-tighter flex items-center gap-2">
+                                        <Layers className="text-purple-500" size={20} /> AR Space Config
+                                    </h3>
+                                    <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">
+                                        Quản lý Marker & Targets
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {/* Marker Status Badge */}
+                                    <div className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 ${config.marker_url ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+                                        {config.marker_url ? <Check size={12} /> : <AlertCircle size={12} />}
+                                        <span className="text-[10px] font-black uppercase tracking-widest">
+                                            {config.marker_url ? 'Active' : 'Missing'}
+                                        </span>
                                     </div>
                                 </div>
-                                {config.targets?.map((target: TargetConfig, idx: number) => (
-                                    <div
-                                        key={target.targetIndex}
-                                        onClick={() => { setSelectedTargetIndex(idx); setSelectedAssetId(null); }}
-                                        className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedTargetIndex === idx
-                                            ? 'bg-[#1a1a1a] border border-pink-500/50 shadow-[0_0_20px_rgba(236,72,153,0.1)]'
-                                            : 'hover:bg-white/5 border border-transparent'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3 flex-1">
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 ${selectedTargetIndex === idx ? 'bg-pink-500 text-white' : 'bg-white/5 text-white/40'}`}>
-                                                {target.targetIndex}
-                                            </div>
-                                            <div className="flex-1">
-                                                <input
-                                                    type="text"
-                                                    value={target.name}
-                                                    onChange={(e) => updateTarget(idx, { name: e.target.value })}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="bg-transparent border-none p-0 text-sm font-black uppercase tracking-tight text-white focus:ring-0 w-full placeholder:text-white/20"
-                                                    placeholder={`Target ${target.targetIndex}`}
-                                                />
-                                                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mt-0.5">
-                                                    {target.assets?.length || 0} Assets
-                                                </p>
-                                            </div>
-                                        </div>
+                            </div>
 
-                                        {/* Action Menu */}
-                                        <div className="relative">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setMenuOpenIndex(menuOpenIndex === idx ? null : idx)
-                                                }}
-                                                className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                                            >
-                                                <MoreVertical size={14} />
-                                            </button>
+                            {/* Action Row */}
+                            <div className="flex items-center gap-2">
+                                {/* Upload Button */}
+                                <label className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#1a1a1a] hover:bg-white/5 border border-white/10 hover:border-white/20 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all active:scale-95 group`}>
+                                    <Upload size={16} className="text-white/40 group-hover:text-white transition-colors" />
+                                    <span>Upload .mind</span>
+                                    <input
+                                        type="file"
+                                        disabled={uploadingField === 'marker_url'}
+                                        className="hidden"
+                                        accept=".mind"
+                                        onChange={handleMarkerUpload}
+                                    />
+                                </label>
 
-                                            {menuOpenIndex === idx && (
-                                                <div className="absolute right-0 top-8 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-200">
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleClone(idx); }}
-                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
-                                                    >
-                                                        <Copy size={12} /> Clone Content
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleInherit(idx); }}
-                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
-                                                    >
-                                                        <Link size={12} /> Inherit Content
-                                                    </button>
-                                                    <div className="h-px bg-white/5 my-0.5" />
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); removeTarget(idx); }}
-                                                        disabled={(config.targets?.length || 0) <= 1}
-                                                        className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-red-500 hover:bg-red-500/10 rounded-lg transition-all uppercase tracking-wider text-left disabled:opacity-50"
-                                                    >
-                                                        <Trash2 size={12} /> Remove
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
+                                {/* Smart Batch Button */}
+                                <label className="flex-1 relative inline-flex items-center justify-center px-4 py-3 overflow-hidden font-black text-white transition duration-300 ease-out border border-white/10 rounded-xl shadow-md group cursor-pointer bg-[#1a1a1a] hover:bg-white/5">
+                                    <span className="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-gradient-to-r from-purple-500 to-pink-500 group-hover:translate-x-0 ease">
+                                        <Sparkles size={18} className="text-white" />
+                                    </span>
+                                    <span className="absolute flex items-center justify-center w-full h-full text-white transition-all duration-300 transform group-hover:translate-x-full ease">
+                                        <span className="flex items-center gap-2 text-xs uppercase tracking-widest">
+                                            <Sparkles size={16} className="text-purple-500" /> Smart Batch
+                                        </span>
+                                    </span>
+                                    <span className="relative invisible flex items-center gap-2 text-xs uppercase tracking-widest">
+                                        <Sparkles size={16} /> Smart Batch
+                                    </span>
+                                    <input
+                                        type="file"
+                                        multiple
+                                        className="hidden"
+                                        accept="image/png,image/jpeg"
+                                        onChange={handleSmartCompile}
+                                        disabled={isCompiling}
+                                    />
+                                </label>
                             </div>
                         </div>
-                    </section>
 
-                    {/* 1. Asset Manager */}
-                    <section className="bg-[#121212] border border-white/5 rounded-2xl shadow-2xl backdrop-blur-xl">
-                        <div className="p-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <Layers size={18} className="text-orange-500" />
-                                <h3 className="font-black text-white uppercase tracking-tighter text-sm">Assets: {currentTarget.name}</h3>
+                        {/* 0. Target Manager */}
+                        {/* 2. Target List */}
+                        <div className="border-b border-white/5 bg-black/20 flex flex-col max-h-[300px] shrink-0">
+                            {/* Header */}
+                            <div className="p-3 px-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#0a0a0a]/50 backdrop-blur-md z-10">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/50 flex items-center gap-2">
+                                    <ImageIcon size={12} /> Target List ({config.targets?.length || 0})
+                                </h4>
+                                {/* Add Target via Upload */}
+                                <label className="p-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50">
+                                    <Plus size={14} />
+                                    <input
+                                        type="file"
+                                        ref={addMoreInputRef}
+                                        multiple
+                                        className="hidden"
+                                        accept="image/png,image/jpeg"
+                                        onChange={handleAddMoreTargets}
+                                        disabled={isCompiling || (config.targets?.length || 0) >= 100}
+                                    />
+                                </label>
                             </div>
-                            <div className="flex gap-2">
 
-                                <div className="flex items-center gap-2">
+                            <div className="p-2 max-h-[250px] overflow-y-auto custom-scrollbar">
+                                <div className="grid grid-cols-1 gap-2">
+
+                                    {config.targets?.map((target: TargetConfig, idx: number) => (
+                                        <div
+                                            key={target.targetIndex}
+                                            onClick={() => { setSelectedTargetIndex(idx); setSelectedAssetId(null); }}
+                                            className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedTargetIndex === idx
+                                                ? 'bg-[#1a1a1a] border border-pink-500/50 shadow-[0_0_20px_rgba(236,72,153,0.1)]'
+                                                : 'hover:bg-white/5 border border-transparent'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3 flex-1">
+                                                {/* Thumbnail or Index */}
+                                                {target.thumbnail ? (
+                                                    <img
+                                                        src={target.thumbnail}
+                                                        alt={target.name}
+                                                        className={`w-10 h-10 rounded-lg object-cover border ${selectedTargetIndex === idx ? 'border-pink-500' : 'border-white/10'}`}
+                                                    />
+                                                ) : (
+                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 ${selectedTargetIndex === idx ? 'bg-pink-500 text-white' : 'bg-white/5 text-white/40'}`}>
+                                                        {target.targetIndex}
+                                                    </div>
+                                                )}
+                                                <div className="flex-1">
+                                                    <input
+                                                        type="text"
+                                                        value={target.name}
+                                                        onChange={(e) => updateTarget(idx, { name: e.target.value })}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="bg-transparent border-none p-0 text-sm font-black uppercase tracking-tight text-white focus:ring-0 w-full placeholder:text-white/20"
+                                                        placeholder={`Target ${target.targetIndex}`}
+                                                    />
+                                                    <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mt-0.5">
+                                                        {target.assets?.length || 0} Assets
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Action Menu */}
+                                            <div className="relative">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setMenuOpenIndex(menuOpenIndex === idx ? null : idx)
+                                                    }}
+                                                    className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                                >
+                                                    <MoreVertical size={14} />
+                                                </button>
+
+                                                {menuOpenIndex === idx && (
+                                                    <div className="absolute right-0 top-8 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-200">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleClone(idx); }}
+                                                            className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
+                                                        >
+                                                            <Copy size={12} /> Clone Content
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleInherit(idx); }}
+                                                            className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all uppercase tracking-wider text-left"
+                                                        >
+                                                            <Link size={12} /> Inherit Content
+                                                        </button>
+                                                        <div className="h-px bg-white/5 my-0.5" />
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); removeTarget(idx); }}
+                                                            disabled={(config.targets?.length || 0) <= 1}
+                                                            className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-red-500 hover:bg-red-500/10 rounded-lg transition-all uppercase tracking-wider text-left disabled:opacity-50"
+                                                        >
+                                                            <Trash2 size={12} /> Remove
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 1. Asset Manager */}
+                        {/* 3. Asset Manager */}
+                        <div className="flex-1 bg-black/10 flex flex-col relative overflow-hidden">
+                            {/* Header */}
+                            <div className="p-3 px-4 border-b border-white/5 flex items-center justify-between bg-[#0a0a0a]/30">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/50 flex items-center gap-2">
+                                    <Layers size={12} /> {currentTarget ? `Assets: ${currentTarget.name}` : 'Select a Target'}
+                                </h4>
+                                <div className="flex items-center gap-1">
                                     {isInherited ? (
-                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                            <Link size={12} className="text-blue-500" />
-                                            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                                                Linked to Target {currentTarget.extends}
-                                            </span>
+                                        <div className="flex items-center gap-2 px-2 py-1 bg-blue-500/10 border border-blue-500/20 rounded text-[9px]">
+                                            <Link size={10} className="text-blue-500" />
+                                            <span className="text-blue-400 font-bold uppercase tracking-wider">Linked</span>
                                             <button
-                                                onClick={() => updateTarget(selectedTargetIndex, { extends: undefined, assets: JSON.parse(JSON.stringify(currentAssets)) })}
-                                                className="ml-2 px-2 py-0.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-[9px] font-black uppercase tracking-widest transition-all"
+                                                onClick={() => updateTarget(selectedTargetIndex, { extends: undefined, assets: [] })}
+                                                className="ml-1 px-1.5 py-0.5 bg-blue-500 hover:bg-blue-600 text-white rounded-[4px] font-black uppercase tracking-widest transition-all"
                                             >
-                                                Break Link
+                                                Unlink
                                             </button>
                                         </div>
                                     ) : (
                                         <>
-                                            <button
-                                                onClick={() => addAsset('3d')}
-                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-blue-600 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                            >
-                                                <Plus size={14} /> 3D Model
-                                            </button>
-                                            <button
-                                                onClick={() => addAsset('video')}
-                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-purple-600 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                            >
-                                                <Plus size={14} /> Video
-                                            </button>
-                                            <button
-                                                onClick={() => addAsset('occlusion')}
-                                                className="px-3 py-1.5 bg-[#1a1a1a] border border-white/10 text-white rounded-lg text-[10px] font-black hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-xl flex items-center gap-1.5 uppercase tracking-widest"
-                                            >
-                                                <Plus size={14} /> Occlusion
-                                            </button>
+                                            <button onClick={() => addAsset('3d')} title="Add 3D Model" className="p-1.5 hover:bg-white/10 rounded-md text-blue-400 transition-colors"><Box size={14} /></button>
+                                            <button onClick={() => addAsset('video')} title="Add Video" className="p-1.5 hover:bg-white/10 rounded-md text-purple-400 transition-colors"><Video size={14} /></button>
+                                            <button onClick={() => addAsset('image')} title="Add Image" className="p-1.5 hover:bg-white/10 rounded-md text-green-400 transition-colors"><ImageIcon size={14} /></button>
+                                            <button onClick={() => addAsset('occlusion')} title="Add Occlusion" className="p-1.5 hover:bg-white/10 rounded-md text-red-400 transition-colors"><EyeOff size={14} /></button>
                                         </>
                                     )}
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="p-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            {currentAssets.length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-1">
-                                    {currentAssets.map((asset: ARAsset) => (
+                            {/* Asset Grid */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                                {currentAssets.length > 0 ? (
+                                    currentAssets.map((asset: ARAsset) => (
                                         <div
                                             key={asset.id}
                                             onClick={() => setSelectedAssetId(asset.id)}
-                                            className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ${selectedAssetId === asset.id
-                                                ? 'bg-[#1a1a1a] border border-orange-500/50 shadow-[0_0_20px_rgba(249,115,22,0.1)]'
+                                            className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all duration-200 ${selectedAssetId === asset.id
+                                                ? 'bg-white/10 border border-white/20'
                                                 : 'hover:bg-white/5 border border-transparent'
                                                 }`}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-xl shadow-2xl transition-transform group-hover:scale-110 ${asset.type === '3d' ? 'bg-blue-600' : (asset.type === 'occlusion' ? 'bg-red-600' : 'bg-purple-600')
-                                                    } text-white`}>
-                                                    {asset.type === '3d' ? <Box size={16} /> : (asset.type === 'occlusion' ? <EyeOff size={16} /> : <Video size={16} />)}
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <div className={`p-1.5 rounded-md ${asset.type === '3d' ? 'bg-blue-500/20 text-blue-400' : (asset.type === 'image' ? 'bg-green-500/20 text-green-400' : (asset.type === 'video' ? 'bg-purple-500/20 text-purple-400' : 'bg-red-500/20 text-red-400'))}`}>
+                                                    {asset.type === '3d' ? <Box size={10} /> : (asset.type === 'image' ? <ImageIcon size={10} /> : (asset.type === 'video' ? <Video size={10} /> : <EyeOff size={10} />))}
                                                 </div>
-                                                <div>
-                                                    <p className={`text-sm font-black uppercase tracking-tighter truncate max-w-[150px] ${selectedAssetId === asset.id ? 'text-orange-500' : 'text-white/60 group-hover:text-white'}`}>
-                                                        {asset.name}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        <span className={`text-[8px] px-2 py-0.5 rounded-md font-black uppercase tracking-[0.2em] ${asset.type === '3d' ? 'bg-blue-500/20 text-blue-400' : (asset.type === 'occlusion' ? 'bg-red-500/20 text-red-400' : 'bg-purple-500/20 text-purple-400')
-                                                            } border border-white/5`}>
-                                                            {asset.type}
-                                                        </span>
-                                                        {!asset.url && <span className="text-[8px] text-red-500 font-black tracking-widest animate-pulse">NO FILE</span>}
-                                                    </div>
-                                                </div>
+                                                <span className={`text-[10px] font-bold uppercase tracking-wider truncate ${selectedAssetId === asset.id ? 'text-white' : 'text-white/60'}`}>
+                                                    {asset.name}
+                                                </span>
                                             </div>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }}
-                                                className="opacity-0 group-hover:opacity-100 p-2 text-white/40 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                                className="opacity-0 group-hover:opacity-100 p-1 text-white/20 hover:text-red-500 transition-all"
                                             >
-                                                <Trash2 size={16} />
+                                                <Trash2 size={12} />
                                             </button>
                                         </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="p-12 text-center text-white/40">
-                                    <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-dashed border-white/10">
-                                        <Box size={24} className="opacity-20" />
+                                    ))
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center text-white/20">
+                                        <Layers size={24} className="mb-2 opacity-50" />
+                                        <p className="text-[9px] uppercase tracking-widest font-bold">No Assets</p>
                                     </div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest">Chưa có asset nào</p>
-                                    <p className="text-[9px] font-medium mt-1">Nhấn nút bên trên để thêm</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </section>
 
@@ -1662,7 +1890,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                         <span className="font-black text-[10px] text-white bg-white/5 px-2 py-0.5 rounded border border-white/10">{selectedAsset.position[i].toFixed(2)}</span>
                                                     </div>
                                                     <div className="relative h-4 flex items-center">
-                                                        <div className="absolute inset-0 h-1 bg-white/5 rounded-full" />
+                                                        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-white/5 rounded-full" />
                                                         <input
                                                             type="range" min="-3" max="3" step="0.01"
                                                             value={selectedAsset.position[i]}
@@ -1671,7 +1899,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                                 newPos[i] = parseFloat(e.target.value)
                                                                 updateAsset(selectedAsset.id, { position: newPos })
                                                             }}
-                                                            className="relative w-full h-1 bg-transparent appearance-none cursor-pointer accent-blue-500 hover:accent-orange-500 transition-all"
+                                                            className="relative w-full h-4 bg-transparent appearance-none cursor-pointer accent-blue-500 hover:accent-orange-500 transition-all"
                                                         />
                                                     </div>
                                                 </div>
@@ -1687,7 +1915,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                         <span className="font-black text-[10px] text-white bg-white/5 px-2 py-0.5 rounded border border-white/10">{selectedAsset.rotation[i]}°</span>
                                                     </div>
                                                     <div className="relative h-4 flex items-center">
-                                                        <div className="absolute inset-0 h-1 bg-white/5 rounded-full" />
+                                                        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-white/5 rounded-full" />
                                                         <input
                                                             type="range" min="-180" max="180" step="1"
                                                             value={selectedAsset.rotation[i]}
@@ -1696,7 +1924,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                                 newRot[i] = parseInt(e.target.value)
                                                                 updateAsset(selectedAsset.id, { rotation: newRot })
                                                             }}
-                                                            className="relative w-full h-1 bg-transparent appearance-none cursor-pointer accent-purple-500 hover:accent-orange-500 transition-all"
+                                                            className="relative w-full h-4 bg-transparent appearance-none cursor-pointer accent-purple-500 hover:accent-orange-500 transition-all"
                                                         />
                                                     </div>
                                                 </div>
@@ -1741,7 +1969,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             <div className="bg-black/40 p-8 rounded-3xl border border-white/5 space-y-6 shadow-inner">
                                                 <div className="flex items-center justify-between">
                                                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
-                                                        Nguồn {(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '3D Model (.glb)' : 'Video (.mp4/.webm)'}
+                                                        Nguồn {(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '3D Model (.glb)' : (selectedAsset.type === 'image' ? 'Image (.png/.webp)' : 'Video (.mp4/.webm)')}
                                                     </label>
                                                     {selectedAsset.url && <span className="text-[9px] font-black text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 flex items-center gap-1 uppercase tracking-widest"><Check size={10} /> ĐÃ UPLOAD</span>}
                                                 </div>
@@ -1759,14 +1987,14 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                             type="file"
                                                             disabled={uploadingField === 'content'}
                                                             className="hidden"
-                                                            accept={(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '.glb' : '.mp4,.webm,.webp'}
+                                                            accept={(selectedAsset.type === '3d' || selectedAsset.type === 'occlusion') ? '.glb' : (selectedAsset.type === 'image' ? '.png,.webp,.jpg,.jpeg' : '.mp4,.webm,.webp')}
                                                             onChange={async (e) => {
                                                                 const file = e.target.files?.[0]
                                                                 const url = await handleFileUpload(e, 'temp_url', 'content')
                                                                 if (url && file) {
                                                                     // Use filename if asset name is default
                                                                     const currentAssetName = selectedAsset.name
-                                                                    const isDefaultName = currentAssetName === 'New 3D Model' || currentAssetName === 'New Video' || currentAssetName === 'New Occlusion'
+                                                                    const isDefaultName = currentAssetName === 'New 3D Model' || currentAssetName === 'New Video' || currentAssetName === 'New Occlusion' || currentAssetName === 'New Image'
                                                                     const newName = isDefaultName ? file.name : currentAssetName
 
                                                                     // Auto-detect video dimensions
@@ -1841,6 +2069,58 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                         <Activity size={14} /> {selectedAsset.video_muted ? 'Đã tắt tiếng' : 'Có tiếng'}
                                                     </button>
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {/* Image Specific Settings */}
+                                        {selectedAsset.type === 'image' && (
+                                            <div className="space-y-6 bg-black/40 p-8 rounded-3xl border border-white/5 shadow-inner">
+                                                <div className="flex items-center gap-2 text-white/50">
+                                                    <ImageIcon size={16} className="text-green-500" />
+                                                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">Kích thước Image Plane</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-8">
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between items-center">
+                                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Chiều rộng</label>
+                                                            <span className="font-black text-[10px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">{(selectedAsset.image_width || 1).toFixed(1)}</span>
+                                                        </div>
+                                                        <div className="relative h-4 flex items-center">
+                                                            <input
+                                                                type="range" min="0.1" max="5" step="0.1"
+                                                                value={selectedAsset.image_width || 1}
+                                                                onChange={(e) => updateAsset(selectedAsset.id, { image_width: parseFloat(e.target.value) })}
+                                                                className="relative w-full cursor-pointer accent-green-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between items-center">
+                                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Chiều cao</label>
+                                                            <span className="font-black text-[10px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">{(selectedAsset.image_height || 1).toFixed(1)}</span>
+                                                        </div>
+                                                        <div className="relative h-4 flex items-center">
+                                                            <input
+                                                                type="range" min="0.1" max="5" step="0.1"
+                                                                value={selectedAsset.image_height || 1}
+                                                                onChange={(e) => updateAsset(selectedAsset.id, { image_height: parseFloat(e.target.value) })}
+                                                                className="relative w-full cursor-pointer accent-green-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {/* Image Preview */}
+                                                {selectedAsset.url && (
+                                                    <div className="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-[#1a1a1a]">
+                                                        <div className="px-4 py-2 border-b border-white/5 flex justify-between items-center">
+                                                            <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Preview</span>
+                                                            <ImageIcon size={12} className="text-green-500" />
+                                                        </div>
+                                                        <div className="p-4 flex justify-center" style={{ background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 50% / 16px 16px' }}>
+                                                            <img src={selectedAsset.url} alt="Preview" className="max-h-[200px] object-contain" />
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -2086,10 +2366,11 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{(config.ambient_intensity || 1.0).toFixed(1)}</span>
                                         </div>
                                         <div className="relative h-6 flex items-center">
-                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-white/5 rounded-full overflow-hidden">
                                                 <div className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${((config.ambient_intensity || 1) / 3) * 100}%` }} />
                                             </div>
-                                            <input type="range" min="0" max="3" step="0.1" value={config.ambient_intensity || 1} onChange={(e) => updateConfig('ambient_intensity', parseFloat(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
+                                            <input type="range" min="0" max="3" step="0.1" value={config.ambient_intensity || 1} onChange={(e) => updateConfig('ambient_intensity', parseFloat(e.target.value))} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                            <div className="absolute w-4 h-4 bg-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.5)] pointer-events-none top-1/2 -translate-y-1/2" style={{ left: `calc(${((config.ambient_intensity || 1) / 3) * 100}% - 8px)` }}></div>
                                         </div>
                                     </div>
                                     <div className="space-y-4">
@@ -2098,10 +2379,11 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{(config.exposure || 1.0).toFixed(1)}</span>
                                         </div>
                                         <div className="relative h-6 flex items-center">
-                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-white/5 rounded-full overflow-hidden">
                                                 <div className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${((config.exposure || 1) / 3) * 100}%` }} />
                                             </div>
-                                            <input type="range" min="0.1" max="3" step="0.1" value={config.exposure || 1} onChange={(e) => updateConfig('exposure', parseFloat(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
+                                            <input type="range" min="0.1" max="3" step="0.1" value={config.exposure || 1} onChange={(e) => updateConfig('exposure', parseFloat(e.target.value))} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                            <div className="absolute w-4 h-4 bg-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.5)] pointer-events-none top-1/2 -translate-y-1/2" style={{ left: `calc(${((config.exposure || 1) / 3) * 100}% - 8px)` }}></div>
                                         </div>
                                     </div>
                                     <div className="space-y-4">
@@ -2129,11 +2411,11 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                             <span className="text-xs font-black text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10 shadow-inner">{config.max_video_duration || 30}s</span>
                                         </div>
                                         <div className="relative h-6 flex items-center">
-                                            <div className="absolute inset-0 h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-white/5 rounded-full overflow-hidden">
                                                 <div className="h-full bg-white/20" style={{ width: `${((config.max_video_duration || 30) / 60) * 100}%` }} />
                                             </div>
-                                            <input type="range" min="5" max="60" step="5" value={config.max_video_duration || 30} onChange={(e) => updateConfig('max_video_duration', parseInt(e.target.value))} className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer z-10" />
-                                            <div className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.5)] pointer-events-none" style={{ left: `calc(${((config.max_video_duration || 30) / 60) * 100}% - 8px)` }}></div>
+                                            <input type="range" min="5" max="60" step="5" value={config.max_video_duration || 30} onChange={(e) => updateConfig('max_video_duration', parseInt(e.target.value))} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                            <div className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.5)] pointer-events-none top-1/2 -translate-y-1/2" style={{ left: `calc(${((config.max_video_duration || 30) / 60) * 100}% - 8px)` }}></div>
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 gap-4 pt-2">
@@ -2244,6 +2526,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                                                 config={config}
                                                 debugMode={debugMode}
                                                 onClose={() => setShowPreview(false)}
+                                                selectedTargetIndex={selectedTargetIndex}
                                             />
                                         )}
                                     </Suspense>
@@ -2281,6 +2564,185 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
 
                     </div>
                 </div >
+
+                {/* Smart Compile Overlay */}
+                {isCompiling && (
+                    <div className="fixed inset-0 bg-black/95 z-[9999] flex flex-col items-center justify-center backdrop-blur-xl animate-in fade-in duration-300">
+                        <div className="w-[400px] max-w-full p-8 text-center space-y-8 relative">
+                            {/* Animated Mesh/Brain Effect (Simulated) */}
+                            <div className="relative w-32 h-32 mx-auto">
+                                <div className="absolute inset-0 rounded-full border-4 border-white/5 border-t-purple-500 animate-spin" />
+                                <div className="absolute inset-4 rounded-full border-4 border-white/5 border-t-pink-500 animate-spin-slow" style={{ animationDirection: 'reverse' }} />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <Sparkles size={32} className="text-white animate-pulse" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h3 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 uppercase tracking-tighter">
+                                    AI Compiler
+                                </h3>
+                                <p className="text-white/60 text-xs font-medium uppercase tracking-widest animate-pulse">
+                                    {compileStatus}
+                                </p>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ease-out"
+                                    style={{ width: `${compileProgress}%` }}
+                                />
+                            </div>
+                            <p className="text-white/40 text-[10px] font-mono">{compileProgress}%</p>
+
+                            <p className="text-white/20 text-[9px] italic max-w-[80%] mx-auto">
+                                Hệ thống đang tự động tạo 5 góc nhìn biến thể và training Neural Network. Vui lòng không tắt trình duyệt.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Compile Mode Selection Modal */}
+                {showCompileModeModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                            {/* Header */}
+                            <div className="text-center mb-6">
+                                <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-cyan-500/20 flex items-center justify-center">
+                                    <Sparkles size={28} className="text-cyan-400" />
+                                </div>
+                                <h3 className="text-white font-black text-lg tracking-tight">Chọn Chế Độ Compile</h3>
+                                <p className="text-white/50 text-xs mt-1">{pendingCompileFiles.length} ảnh đã chọn</p>
+                            </div>
+
+                            {/* Mode Options */}
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                {/* Quick Mode */}
+                                <button
+                                    onClick={() => startCompile(false)}
+                                    className="group relative p-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/50 rounded-2xl text-left transition-all"
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                                            <Sparkles size={16} className="text-cyan-400" />
+                                        </div>
+                                        <span className="font-bold text-white text-sm">Quick</span>
+                                    </div>
+                                    <ul className="space-y-1.5 text-[10px] text-white/60">
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-cyan-500" /> 1 target/ảnh
+                                        </li>
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-cyan-500" /> ~30 giây/ảnh
+                                        </li>
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-cyan-500" /> Tracking cơ bản
+                                        </li>
+                                    </ul>
+                                    <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-cyan-500/20 rounded text-[8px] font-bold text-cyan-400 uppercase">
+                                        Nhanh
+                                    </div>
+                                </button>
+
+                                {/* Smart Mode */}
+                                <button
+                                    onClick={() => startCompile(true)}
+                                    className="group relative p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 border border-purple-500/30 hover:border-purple-500/50 rounded-2xl text-left transition-all"
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                                            <Sparkles size={16} className="text-purple-400" />
+                                        </div>
+                                        <span className="font-bold text-white text-sm">Smart</span>
+                                    </div>
+                                    <ul className="space-y-1.5 text-[10px] text-white/60">
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-purple-500" /> 5 targets/ảnh
+                                        </li>
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-purple-500" /> 5 góc nhìn
+                                        </li>
+                                        <li className="flex items-center gap-1.5">
+                                            <Check size={10} className="text-purple-500" /> Tracking mạnh
+                                        </li>
+                                    </ul>
+                                    <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-purple-500/30 rounded text-[8px] font-bold text-purple-300 uppercase flex items-center gap-1">
+                                        <Sparkles size={8} /> Khuyên dùng
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* Cancel */}
+                            <button
+                                onClick={() => { setShowCompileModeModal(false); setPendingCompileFiles([]) }}
+                                className="w-full py-2.5 text-white/40 hover:text-white/60 text-xs font-medium transition-colors"
+                            >
+                                Hủy bỏ
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Clone/Inherit Modal */}
+                {showCloneInheritModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                            {/* Header */}
+                            <div className="text-center mb-5">
+                                <div className={`w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center ${cloneInheritMode === 'clone' ? 'bg-cyan-500/20' : 'bg-purple-500/20'}`}>
+                                    {cloneInheritMode === 'clone' ? (
+                                        <Copy size={28} className="text-cyan-400" />
+                                    ) : (
+                                        <Link size={28} className="text-purple-400" />
+                                    )}
+                                </div>
+                                <h3 className="text-white font-black text-lg tracking-tight">
+                                    {cloneInheritMode === 'clone' ? 'Clone Assets' : 'Inherit Content'}
+                                </h3>
+                                <p className="text-white/50 text-xs mt-1">
+                                    {cloneInheritMode === 'clone'
+                                        ? 'Sao chép assets từ target khác (tạo bản sao độc lập)'
+                                        : 'Liên kết với target khác (thay đổi theo source)'}
+                                </p>
+                            </div>
+
+                            {/* Target Selection List */}
+                            <div className="mb-4">
+                                <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Chọn Target Nguồn</p>
+                                <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-1.5 p-1 -mx-1">
+                                    {config.targets?.map((target: TargetConfig, idx: number) => (
+                                        target.targetIndex !== pendingActionTargetIndex && (
+                                            <button
+                                                key={target.targetIndex}
+                                                onClick={() => executeCloneInherit(target.targetIndex)}
+                                                className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all border border-transparent hover:border-white/20 hover:bg-white/5 ${cloneInheritMode === 'clone' ? 'hover:border-cyan-500/30' : 'hover:border-purple-500/30'
+                                                    }`}
+                                            >
+                                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-xs border border-white/10 bg-white/5 text-white/60`}>
+                                                    {target.targetIndex}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-white truncate">{target.name}</p>
+                                                    <p className="text-[10px] text-white/40">{target.assets?.length || 0} assets</p>
+                                                </div>
+                                                <ChevronRight size={14} className="text-white/20" />
+                                            </button>
+                                        )
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Cancel */}
+                            <button
+                                onClick={() => setShowCloneInheritModal(false)}
+                                className="w-full py-2.5 text-white/40 hover:text-white/60 text-xs font-medium transition-colors"
+                            >
+                                Hủy bỏ
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div >
         )
     }

@@ -11,3 +11,109 @@ body {
   background: rgb(var(--background-end-rgb));
   min-height: 100vh;
 }
+
+/* Custom Scrollbar - Dark Theme */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) rgba(255, 255, 255, 0.02);
+}
+
+/* Custom Range Slider Styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 16px;
+  margin: 0;
+}
+
+input[type="range"]::-webkit-slider-track {
+  background: rgba(255, 255, 255, 0.1);
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  margin-top: 0;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.6);
+}
+
+/* Purple accent for rotation sliders */
+input[type="range"].accent-purple-500::-webkit-slider-thumb {
+  background: #a855f7;
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.4);
+}
+
+input[type="range"].accent-purple-500::-webkit-slider-thumb:hover {
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.6);
+}
+
+/* Orange accent for scale/active sliders */
+input[type="range"].accent-orange-500::-webkit-slider-thumb {
+  background: #f97316;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+}
+
+input[type="range"].accent-orange-500::-webkit-slider-thumb:hover {
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.6);
+}
+
+/* Green accent for image sliders */
+input[type="range"].accent-green-500::-webkit-slider-thumb {
+  background: #22c55e;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.4);
+}
+
+input[type="range"].accent-green-500::-webkit-slider-thumb:hover {
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.6);
+}
+
+/* Firefox range slider */
+input[type="range"]::-moz-range-track {
+  background: rgba(255, 255, 255, 0.1);
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: none;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}

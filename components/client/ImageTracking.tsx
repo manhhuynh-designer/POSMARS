@@ -22,7 +22,7 @@ interface VideoKeyframe {
 interface ARAsset {
     id: string
     name: string
-    type: '3d' | 'video' | 'occlusion'
+    type: '3d' | 'video' | 'occlusion' | 'image'
     occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane'
     url: string
     scale: number
@@ -35,6 +35,10 @@ interface ARAsset {
     video_autoplay?: boolean
     video_loop?: boolean
     video_muted?: boolean
+
+    // Image settings
+    image_width?: number
+    image_height?: number
 
     // Animation settings
     animation_mode?: 'auto' | 'loop_clips' | 'tap_to_play'
@@ -310,9 +314,16 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         if (oldScene) {
             try {
                 const s = oldScene as any
-                s.systems?.['mindar-image-system']?.stop?.()
+                // Safe stop with optional chaining and try-catch
+                if (s.systems?.['mindar-image-system']?.stop) {
+                    try {
+                        s.systems['mindar-image-system'].stop()
+                    } catch (err) {
+                        // console.debug('MindAR stop warning (harmless):', err)
+                    }
+                }
             } catch (e) {
-                console.warn('⚠️ Image Tracking: Failed to stop existing MindAR system', e)
+                console.warn('⚠️ Image Tracking: Failed to access MindAR system', e)
             }
             try {
                 oldScene.remove()
@@ -326,7 +337,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         // filterMinCF: 0.0001 (very low = smooth), filterBeta: 0.001 (very low = very stable)
         // maxTrack: max concurrent targets to track (default 3 for performance)
         const maxTrack = config.max_track || 3
-        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.00001; filterBeta: 0.001; missTolerance: 10; warmupTolerance: 1; maxTrack: ${maxTrack}`)
+        scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.0005; missTolerance: 30; warmupTolerance: 10; maxTrack: ${maxTrack}`)
         scene.setAttribute('embedded', 'true')
         scene.setAttribute('color-space', 'sRGB')
         // CRITICAL: preserveDrawingBuffer: true is required for canvas capture!
@@ -582,6 +593,19 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     })
 
                     assetEntity.appendChild(plane)
+                } else if (asset.type === 'image') {
+                    // Image Asset - render as a-image with configurable dimensions
+                    const imageEl = document.createElement('a-image')
+                    imageEl.setAttribute('src', asset.url)
+                    imageEl.setAttribute('width', (asset.image_width || 1).toString())
+                    imageEl.setAttribute('height', (asset.image_height || 1).toString())
+                    // Use flat shader for consistent appearance
+                    imageEl.setAttribute('material', 'shader: flat; transparent: true')
+
+                    // Apply keyframes if present
+                    applyKeyframes(imageEl, asset)
+
+                    assetEntity.appendChild(imageEl)
                 }
 
                 targetEntity.appendChild(assetEntity)
@@ -591,43 +615,94 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         // MULTI-TARGET: Create a target entity for each target in finalTargets
         console.log(`🎯 Multi-Target: Creating ${finalTargets.length} target entities`)
 
+        // 1. Group targets by parent
+        const markerGroups: Map<number, number[]> = new Map()
+        const targetToGroup: Map<number, number> = new Map()
+
+        finalTargets.forEach((target) => {
+            const groupKey = target.extends !== undefined ? target.extends : target.targetIndex
+            if (!markerGroups.has(groupKey)) {
+                markerGroups.set(groupKey, [])
+            }
+            markerGroups.get(groupKey)!.push(target.targetIndex)
+            targetToGroup.set(target.targetIndex, groupKey)
+        })
+
+        // 2. Track active state
+        // Set of currently detected targetIndices per group
+        const activeTargetsByGroup: Map<number, Set<number>> = new Map()
+        markerGroups.forEach((_, key) => activeTargetsByGroup.set(key, new Set()))
+
+        // Helper to update visibility for a group
+        const updateGroupVisibility = (groupKey: number) => {
+            const activeSet = activeTargetsByGroup.get(groupKey)
+            if (!activeSet || activeSet.size === 0) return
+
+            // Strategy: Show the most recently added target (simple LIFO for responsiveness)
+            let winnerTargetIndex = -1
+            activeSet.forEach(val => winnerTargetIndex = val) // Get last value
+
+            console.log(`🏆 Group ${groupKey} winner: Target ${winnerTargetIndex} (Active: ${Array.from(activeSet).join(', ')})`)
+
+            // Update all members
+            const groupMembers = markerGroups.get(groupKey) || []
+            groupMembers.forEach(idx => {
+                const contentEl = document.getElementById(`target-content-${idx}`)
+                if (contentEl) {
+                    const isWinner = (idx === winnerTargetIndex)
+
+                    // Apply visibility
+                    contentEl.setAttribute('visible', isWinner.toString())
+
+                    if (isWinner) {
+                        // console.log(`👁️ Winner Target ${idx} (Group ${groupKey}) - showing content`)
+                    } else {
+                        // console.log(`🔒 Non-winner Target ${idx} (Group ${groupKey}) - would be hidden`)
+                    }
+                }
+            })
+        }
+
         finalTargets.forEach((target) => {
             const targetEntity = document.createElement('a-entity')
             targetEntity.setAttribute('mindar-image-target', `targetIndex: ${target.targetIndex}`)
             targetEntity.setAttribute('id', `target-${target.targetIndex}`)
 
-            // Determine assets to render: specific or default
-            // Render assets for this specific target
-            let assetsToRender = target.assets && target.assets.length > 0 ? target.assets : []
+            // Wrapper for content (assets) to control visibility independently of tracking
+            const contentEntity = document.createElement('a-entity')
+            contentEntity.setAttribute('id', `target-content-${target.targetIndex}`)
+            contentEntity.setAttribute('visible', 'true') // Default visible
 
-            // 1. Inheritance Logic
+            targetEntity.appendChild(contentEntity)
+
+            // Determine assets
+            let assetsToRender = target.assets && target.assets.length > 0 ? target.assets : []
             if (assetsToRender.length === 0 && target.extends !== undefined) {
-                const parent = config.targets?.find((t: any) => t.targetIndex === target.extends)
+                const parent = finalTargets.find((t: any) => t.targetIndex === target.extends)
                 if (parent && parent.assets && parent.assets.length > 0) {
                     assetsToRender = parent.assets
                 }
             }
-
-            // 2. Fallback to Global Defaults
             if (assetsToRender.length === 0) {
                 assetsToRender = config.default_assets || []
             }
 
-            console.log(`🎯 Creating target entity for index ${target.targetIndex} (${target.name}) with ${assetsToRender.length} assets`)
+            // Render assets into CONTENT entity, not target entity
+            renderAssetsForTarget(contentEntity, assetsToRender, target.targetIndex)
 
-            renderAssetsForTarget(targetEntity, assetsToRender, target.targetIndex)
-
-            // Event listeners for this target
+            // Events
             targetEntity.addEventListener('targetFound', (e) => {
-                // Prevent infinite loop: only process if event originated from targetEntity itself
                 if (e.target !== targetEntity) return
-
-                console.log(`🎯 Target ${target.targetIndex} (${target.name}) Found! Triggering animations on child entities`)
+                console.log(`✅ Found: ${target.targetIndex} (${target.name})`)
                 setScanning(false)
 
-                // Manually emit 'targetFound' to ALL child entities so animations trigger
-                // Using bubbles=false to prevent event from bubbling back up
-                const children = targetEntity.querySelectorAll('*')
+                const groupKey = targetToGroup.get(target.targetIndex)!
+                activeTargetsByGroup.get(groupKey)?.add(target.targetIndex)
+
+                updateGroupVisibility(groupKey)
+
+                // Trigger animations
+                const children = contentEntity.querySelectorAll('*')
                 children.forEach((child: Element) => {
                     if ((child as any).emit) {
                         (child as any).emit('targetFound', null, false)
@@ -636,10 +711,22 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             })
 
             targetEntity.addEventListener('targetLost', () => {
-                console.log(`❌ Target ${target.targetIndex} (${target.name}) Lost`)
-                // Only set scanning=true if ALL targets are lost
-                // For now, we set it true - can be optimized later to track active targets
-                setScanning(true)
+                console.log(`❌ Lost: ${target.targetIndex} (${target.name})`)
+
+                const groupKey = targetToGroup.get(target.targetIndex)!
+                activeTargetsByGroup.get(groupKey)?.delete(target.targetIndex)
+
+                // If group is empty, we don't strictly need to hide, 
+                // because mindar-image-target hides the parent. 
+                // But updating checks if we need to switch winner if multiple were active.
+                updateGroupVisibility(groupKey)
+
+                // Check global scanning state
+                let anyActive = false
+                activeTargetsByGroup.forEach(set => { if (set.size > 0) anyActive = true })
+                if (!anyActive) {
+                    setScanning(true)
+                }
             })
 
             scene.appendChild(targetEntity)

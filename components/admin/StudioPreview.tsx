@@ -1,6 +1,6 @@
 'use client'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, useGLTF, Grid, useVideoTexture, Html, Environment } from '@react-three/drei'
+import { OrbitControls, useGLTF, Grid, useVideoTexture, useTexture, Html, Environment } from '@react-three/drei'
 import { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { Box, Loader2, Move, RotateCcw, Play, Pause } from 'lucide-react'
@@ -11,6 +11,7 @@ interface StudioPreviewProps {
     config: ImageTrackingConfig
     debugMode?: boolean
     onClose: () => void
+    selectedTargetIndex?: number  // -1 for global defaults, 0+ for specific targets
 }
 
 // Shared animation state for playback control
@@ -304,6 +305,81 @@ function VideoPlane({ asset, animState }: { asset: ARAsset; animState: Animation
     )
 }
 
+// Image Plane Component with keyframe animation and alpha support
+function ImagePlane({ asset, animState }: { asset: ARAsset; animState: AnimationState }) {
+    const ref = useRef<THREE.Mesh>(null)
+    const texture = useTexture(asset.url)
+
+    // Enable alpha transparency for PNG
+    useEffect(() => {
+        if (texture) {
+            texture.colorSpace = THREE.SRGBColorSpace
+        }
+    }, [texture])
+
+    const duration = asset.animation_duration || getKeyframeDuration(asset.keyframes || []) || 5
+    const keyframes = asset.keyframes || []
+    const loop = asset.loop_animation !== false
+
+    useFrame(() => {
+        if (!ref.current || keyframes.length === 0) return
+        if (!animState.isPlaying) return
+
+        const elapsed = (performance.now() - animState.startTimestamp) / 1000
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+            position: asset.position,
+            rotation: asset.rotation,
+            scale: [asset.scale, asset.scale, asset.scale],
+            opacity: 1
+        })
+
+        ref.current.position.set(...values.position)
+        ref.current.rotation.set(
+            values.rotation[0] * Math.PI / 180,
+            values.rotation[1] * Math.PI / 180,
+            values.rotation[2] * Math.PI / 180
+        )
+        // Apply scale with aspect ratio
+        const w = asset.image_width ?? 1
+        const h = asset.image_height ?? 1
+        ref.current.scale.set(values.scale[0] * w, values.scale[1] * h, values.scale[2])
+
+        // Apply opacity
+        const opacity = values.opacity ?? 1
+        if (Array.isArray(ref.current.material)) {
+            ref.current.material.forEach(m => {
+                m.transparent = true
+                m.opacity = opacity
+            })
+        } else {
+            ref.current.material.transparent = true
+            ref.current.material.opacity = opacity
+        }
+    })
+
+    // Initial transform (if no animation)
+    useEffect(() => {
+        if (ref.current && keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            const w = asset.image_width ?? 1
+            const h = asset.image_height ?? 1
+            ref.current.scale.set(asset.scale * w, asset.scale * h, asset.scale)
+        }
+    }, [asset.position, asset.rotation, asset.scale, asset.image_width, asset.image_height, keyframes.length])
+
+    return (
+        <mesh ref={ref}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial map={texture} toneMapped={false} transparent alphaTest={0.1} side={THREE.DoubleSide} />
+        </mesh>
+    )
+}
+
 // Loading fallback
 function Loader() {
     return (
@@ -316,7 +392,7 @@ function Loader() {
     )
 }
 
-export default function StudioPreview({ config, debugMode = false, onClose }: StudioPreviewProps) {
+export default function StudioPreview({ config, debugMode = false, onClose, selectedTargetIndex = -1 }: StudioPreviewProps) {
     const [animState, setAnimState] = useState<AnimationState>({
         isPlaying: true,
         currentTime: 0,
@@ -380,21 +456,50 @@ export default function StudioPreview({ config, debugMode = false, onClose }: St
                         position={[0, 0, 0]}
                     />
 
-                    {/* Assets */}
-                    {config.assets?.map(asset => {
-                        const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
-                        if (!asset.url && !isPrimitiveOcclusion) return null
+                    {/* Assets - Multi-Target Support */}
+                    {(() => {
+                        // Resolve assets based on selected target
+                        let currentAssets: ARAsset[] = []
+                        const targetIndex = selectedTargetIndex ?? -1
 
-                        if (asset.type === 'occlusion') {
-                            return <OcclusionModel key={asset.id} asset={asset} animState={animState} debugMode={debugMode} />
+                        if (targetIndex === -1) {
+                            // Global defaults selected
+                            currentAssets = config.default_assets || config.assets || []
+                        } else {
+                            // Specific target selected
+                            const target = config.targets?.[targetIndex]
+                            if (target) {
+                                // Check if inheriting from another target
+                                if (target.extends !== undefined) {
+                                    if (target.extends === -1) {
+                                        currentAssets = config.default_assets || []
+                                    } else {
+                                        const parentTarget = config.targets?.find(t => t.targetIndex === target.extends)
+                                        currentAssets = parentTarget?.assets || config.default_assets || []
+                                    }
+                                } else {
+                                    currentAssets = target.assets || []
+                                }
+                            }
                         }
 
-                        return asset.type === '3d' ? (
-                            <Model key={asset.id} asset={asset} animState={animState} />
-                        ) : (
-                            <VideoPlane key={asset.id} asset={asset} animState={animState} />
-                        )
-                    })}
+                        return currentAssets.map(asset => {
+                            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+                            if (!asset.url && !isPrimitiveOcclusion) return null
+
+                            if (asset.type === 'occlusion') {
+                                return <OcclusionModel key={asset.id} asset={asset} animState={animState} debugMode={debugMode} />
+                            }
+
+                            return asset.type === '3d' ? (
+                                <Model key={asset.id} asset={asset} animState={animState} />
+                            ) : asset.type === 'image' ? (
+                                <ImagePlane key={asset.id} asset={asset} animState={animState} />
+                            ) : (
+                                <VideoPlane key={asset.id} asset={asset} animState={animState} />
+                            )
+                        })
+                    })()}
 
                     {/* Orbit Controls */}
                     <OrbitControls

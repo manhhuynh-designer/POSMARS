@@ -56,6 +56,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <Link href="/admin/create" className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-white/40 hover:text-white transition-all">
                                 <Plus size={14} className="text-orange-500" /> Tạo Project
                             </Link>
+                            <Link href="/admin/orphans" className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-white/40 hover:text-white transition-all">
+                                <Settings size={14} className="text-orange-500" /> Orphan Manager
+                            </Link>
                         </nav>
                     </div>
                     <div className="flex items-center gap-6">

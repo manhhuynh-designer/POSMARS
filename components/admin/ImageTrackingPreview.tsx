@@ -133,20 +133,50 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             toneMapping: config.tone_mapping ?? 'acesfilmic'
         })
 
-        // 3. Update Assets Transform
-        config.assets?.forEach(asset => {
-            const el = entityRefs.current[asset.id]
-            if (el) {
-                el.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
-                el.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
-                el.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
+        // 3. Update Assets Transform (Multi-Target Aware)
+        const targetsToUpdate = (() => {
+            if (config.targets && config.targets.length > 0) return config.targets;
+            if (config.assets && config.assets.length > 0) return [{ targetIndex: 0, assets: config.assets, name: 'Default' }];
+            return [];
+        })();
 
-                if (asset.type === 'video') {
-                    el.setAttribute('width', (asset.video_width ?? 1).toString())
-                    el.setAttribute('height', (asset.video_height ?? 0.5625).toString())
+        targetsToUpdate.forEach(target => {
+            // Resolve assets similar to initAR
+            let assetsToCheck = target.assets && target.assets.length > 0 ? target.assets : [];
+
+            // Inheritance
+            if (assetsToCheck.length === 0 && target.extends !== undefined) {
+                const parent = config.targets?.find(t => t.targetIndex === target.extends);
+                if (parent && parent.assets && parent.assets.length > 0) {
+                    assetsToCheck = parent.assets;
                 }
             }
-        })
+
+            // Global Defaults
+            if (assetsToCheck.length === 0) {
+                assetsToCheck = config.default_assets || [];
+            }
+
+            assetsToCheck.forEach(asset => {
+                const assetEntityId = `${asset.id}-${target.targetIndex}`;
+                const el = entityRefs.current[assetEntityId];
+
+                if (el) {
+                    el.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`);
+                    el.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`);
+                    el.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`);
+
+                    if (asset.type === 'video') {
+                        el.setAttribute('width', (asset.video_width ?? 1).toString());
+                        el.setAttribute('height', (asset.video_height ?? 0.5625).toString());
+                    } else if (asset.type === 'image') {
+                        el.setAttribute('width', (asset.image_width ?? 1).toString());
+                        el.setAttribute('height', (asset.image_height ?? 1).toString());
+                    }
+                }
+            });
+        });
+
     }, [config])
 
     // Re-initialize scene when assets list or marker changes (Hard update)
@@ -451,6 +481,54 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         console.log('❌ Preview Target Lost - Pausing Video')
                         videoEl.pause()
                     })
+                } else if (asset.type === 'image') {
+                    // Image Asset - render with alpha/transparency support
+                    el = document.createElement('a-image')
+                    el.setAttribute('src', asset.url)
+                    el.setAttribute('width', (asset.image_width ?? 1).toString())
+                    el.setAttribute('height', (asset.image_height ?? 1).toString())
+                    // Use flat shader with alpha transparency
+                    el.setAttribute('material', 'shader: flat; transparent: true; alphaTest: 0.5')
+
+                    // Image Keyframes (Option B) for Preview
+                    if (asset.keyframes && asset.keyframes.length > 0) {
+                        const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
+                        const props = ['position', 'rotation', 'scale', 'opacity'];
+
+                        props.forEach(prop => {
+                            const kfsForProp = sortedKfs.filter(k => k.property === prop);
+                            if (kfsForProp.length === 0) return;
+
+                            kfsForProp.forEach((kf, idx) => {
+                                const animName = `animation__kf_${prop}_${idx}`;
+                                const prevKf = kfsForProp[idx - 1];
+                                let propertyName = prop;
+                                if (prop === 'opacity') propertyName = 'material.opacity';
+
+                                let startEvents = 'targetFound';
+                                if (idx > 0) {
+                                    startEvents = `animationcomplete__kf_${prop}_${idx - 1}`;
+                                }
+
+                                const delay = idx === 0 ? kf.time * 1000 : 0;
+                                const duration = (kf.time - (prevKf ? prevKf.time : 0)) * 1000;
+
+                                let fromAttr = '';
+                                if (idx === 0) {
+                                    let fromValue = '';
+                                    if (prop === 'position') fromValue = asset.position.join(' ');
+                                    else if (prop === 'rotation') fromValue = asset.rotation.join(' ');
+                                    else if (prop === 'scale') fromValue = `${asset.scale} ${asset.scale} ${asset.scale}`;
+                                    else if (prop === 'opacity') fromValue = '1';
+                                    fromAttr = `from: ${fromValue};`;
+                                }
+
+                                el.setAttribute(animName,
+                                    `property: ${propertyName}; ${fromAttr} to: ${kf.value}; dur: ${Math.max(duration, 1)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: ${startEvents}`
+                                );
+                            });
+                        });
+                    }
                 } else {
 
                     // Handle Primitive Occlusion Shapes
@@ -553,9 +631,55 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
 
         console.log(`🎬 Image Tracking Preview: Rendering ${finalTargets.length} targets`)
 
+        // 1. Group targets by parent
+        const markerGroups: Map<number, number[]> = new Map()
+        const targetToGroup: Map<number, number> = new Map()
+
+        finalTargets.forEach((target) => {
+            const groupKey = target.extends !== undefined ? target.extends : target.targetIndex
+            if (!markerGroups.has(groupKey)) {
+                markerGroups.set(groupKey, [])
+            }
+            markerGroups.get(groupKey)!.push(target.targetIndex)
+            targetToGroup.set(target.targetIndex, groupKey)
+        })
+
+        // 2. Track active state
+        const activeTargetsByGroup: Map<number, Set<number>> = new Map()
+        markerGroups.forEach((_, key) => activeTargetsByGroup.set(key, new Set()))
+
+        // Helper to update visibility for a group
+        const updateGroupVisibility = (groupKey: number) => {
+            const activeSet = activeTargetsByGroup.get(groupKey)
+            if (!activeSet || activeSet.size === 0) return
+
+            // Strategy: Show the most recently added target (LIFO)
+            let winnerTargetIndex = -1
+            activeSet.forEach(val => winnerTargetIndex = val)
+
+            // Update all members
+            const groupMembers = markerGroups.get(groupKey) || []
+            groupMembers.forEach(idx => {
+                const contentEl = document.getElementById(`preview-target-content-${idx}`)
+                if (contentEl) {
+                    const isVisible = (idx === winnerTargetIndex)
+                    contentEl.setAttribute('visible', isVisible.toString())
+                    if (isVisible) {
+                        console.log(`👁️ Preview: Showing content for Target ${idx} (Group ${groupKey})`)
+                    }
+                }
+            })
+        }
+
         finalTargets.forEach(target => {
             const targetEntity = document.createElement('a-entity')
             targetEntity.setAttribute('mindar-image-target', `targetIndex: ${target.targetIndex}`)
+
+            // Wrapper for content
+            const contentEntity = document.createElement('a-entity')
+            contentEntity.setAttribute('id', `preview-target-content-${target.targetIndex}`)
+            contentEntity.setAttribute('visible', 'true') // Managed by updateGroupVisibility
+            targetEntity.appendChild(contentEntity)
 
             // Render assets for this target
             let assetsToRender = target.assets && target.assets.length > 0 ? target.assets : []
@@ -573,7 +697,8 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                 assetsToRender = config.default_assets || []
             }
 
-            renderAssetsForTarget(targetEntity, assetsToRender, target.targetIndex)
+            // Render to CONTENT entity
+            renderAssetsForTarget(contentEntity, assetsToRender, target.targetIndex)
 
             // Target Found Listener
             targetEntity.addEventListener('targetFound', (e) => {
@@ -581,7 +706,11 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                 console.log(`🎯 Target ${target.targetIndex} Found!`)
                 setTargetFound(true)
 
-                // Emit targetFound to all child elements
+                const groupKey = targetToGroup.get(target.targetIndex)!
+                activeTargetsByGroup.get(groupKey)?.add(target.targetIndex)
+                updateGroupVisibility(groupKey)
+
+                // Emit targetFound to all child element refs (for animations)
                 assetsToRender.forEach(asset => {
                     const uniqueId = `${asset.id}-${target.targetIndex}`
                     const el = entityRefs.current[uniqueId]
@@ -591,6 +720,9 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     if (asset.type === 'video' && asset.video_autoplay) {
                         const videoId = `preview-video-${asset.id}`
                         const video = document.getElementById(videoId) as HTMLVideoElement
+                        // Only play if this target is the WINNER? 
+                        // Ideally checking visibility, but simple play() is checking 'visible' implicitly in A-Frame? No.
+                        // For preview, let's play them all, but visual is hidden.
                         if (video) video.play()
                     }
                 })
@@ -598,8 +730,17 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
 
             targetEntity.addEventListener('targetLost', () => {
                 console.log(`❌ Target ${target.targetIndex} Lost`)
-                // Only set lost if no other targets are tracked (to be improved)
-                setTargetFound(false)
+
+                const groupKey = targetToGroup.get(target.targetIndex)!
+                activeTargetsByGroup.get(groupKey)?.delete(target.targetIndex)
+                updateGroupVisibility(groupKey)
+
+                // Check if ANY targets are active
+                let anyActive = false
+                activeTargetsByGroup.forEach(set => { if (set.size > 0) anyActive = true })
+                if (!anyActive) {
+                    setTargetFound(false)
+                }
             })
 
             scene.appendChild(targetEntity)
