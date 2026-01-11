@@ -122,6 +122,13 @@ export default function ARCheckin({ config, onCapture }: ARCheckinProps) {
                     title: 'AR Check-in',
                     text: config.share_hashtag || '#POSMARS'
                 })
+                // Track share event
+                if ((window as any).trackGAEvent) {
+                    (window as any).trackGAEvent('share', {
+                        share_type: 'photo',
+                        source: 'ar_checkin'
+                    })
+                }
             } else {
                 downloadImage()
             }

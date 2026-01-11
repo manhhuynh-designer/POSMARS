@@ -16,6 +16,9 @@ export interface LeadFormConfig {
     submit_text: string
     consent_text: string
 
+    // Validation
+    check_duplicate_phone?: boolean
+
     // Visual Customization
     title?: string
     description?: string
@@ -259,6 +262,28 @@ export default function LeadFormBuilder({ initialConfig, onChange, onUpload }: L
                             placeholder="Tôi đồng ý với điều khoản..."
                         />
                     </div>
+                </div>
+                {/* Phone Duplicate Check Toggle */}
+                <div className="pt-4 border-t border-white/5">
+                    <label className="flex items-center gap-4 cursor-pointer select-none group">
+                        <div className={`w-12 h-6 rounded-full transition-all relative ${config.check_duplicate_phone ? 'bg-orange-500' : 'bg-white/10'}`}>
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${config.check_duplicate_phone ? 'left-7' : 'left-1'}`} />
+                        </div>
+                        <input
+                            type="checkbox"
+                            checked={config.check_duplicate_phone || false}
+                            onChange={e => setConfig({ ...config, check_duplicate_phone: e.target.checked })}
+                            className="hidden"
+                        />
+                        <div>
+                            <span className={`block text-sm font-bold ${config.check_duplicate_phone ? 'text-white' : 'text-white/60'} transition-colors`}>
+                                Kiểm tra số điện thoại trùng
+                            </span>
+                            <span className="block text-[10px] text-white/40 mt-0.5">
+                                Không cho phép cùng một số điện thoại đăng ký nhiều lần
+                            </span>
+                        </div>
+                    </label>
                 </div>
             </div>
 

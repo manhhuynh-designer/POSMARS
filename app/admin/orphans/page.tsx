@@ -121,6 +121,39 @@ export default function OrphanManagerPage() {
         }
     };
 
+    // Fix Broken Asset - Remove reference from config
+    const handleFixBrokenAsset = async (item: any) => {
+        if (!confirm(`Xóa reference đến asset "${item.assetId || item.assetPath}" khỏi project "${item.projectName}"?\n\nAsset này sẽ không còn hiển thị trong AR.`)) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch('/api/admin/orphans/assets', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId: item.projectId,
+                    assetId: item.assetId,
+                    assetPath: item.assetPath
+                })
+            });
+
+            if (res.ok) {
+                setBrokenAssets(prev => prev.filter(a =>
+                    !(a.projectId === item.projectId && a.assetId === item.assetId)
+                ));
+                alert('Đã xóa asset reference thành công!');
+            } else {
+                const data = await res.json();
+                alert('Lỗi: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Fix failed:', error);
+            alert('Không thể xóa asset reference');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const getCurrentData = () => {
         if (activeTab === 'leads') return orphanLeads;
         if (activeTab === 'storage') return orphanFiles;
@@ -261,8 +294,9 @@ export default function OrphanManagerPage() {
                                             <>
                                                 <th className="p-4">Project</th>
                                                 <th className="p-4">Asset Type</th>
-                                                <th className="p-4">Path in Config</th>
+                                                <th className="p-4">Reason</th>
                                                 <th className="p-4">Broken URL</th>
+                                                <th className="p-4">Action</th>
                                             </>
                                         )}
                                     </tr>
@@ -316,10 +350,33 @@ export default function OrphanManagerPage() {
                                                         </Link>
                                                     </td>
                                                     <td className="p-4 uppercase text-[10px] font-bold tracking-wider">{item.type}</td>
-                                                    <td className="p-4 font-mono text-white/30">{item.assetPath}</td>
-                                                    <td className="p-4 max-w-xs truncate text-red-400 font-mono text-[10px]" title={item.url}>{item.url}</td>
+                                                    <td className="p-4">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded inline-block w-fit ${item.reason === 'FILE_DELETED' ? 'bg-red-500/20 text-red-400' :
+                                                                item.reason === 'URL_ENCODING_MISMATCH' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                                    item.reason === 'BUCKET_MISMATCH' ? 'bg-purple-500/20 text-purple-400' :
+                                                                        'bg-gray-500/20 text-gray-400'
+                                                                }`}>
+                                                                {item.reason || 'UNKNOWN'}
+                                                            </span>
+                                                            <span className="text-[10px] text-white/40 max-w-[200px]">
+                                                                {item.reasonDescription}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 max-w-[200px] truncate text-red-400 font-mono text-[10px]" title={item.url}>{item.url}</td>
+                                                    <td className="p-4">
+                                                        <button
+                                                            onClick={() => handleFixBrokenAsset(item)}
+                                                            disabled={loading}
+                                                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-50"
+                                                        >
+                                                            <Trash2 size={12} /> Xóa Reference
+                                                        </button>
+                                                    </td>
                                                 </>
                                             )}
+
                                         </tr>
                                     ))}
                                 </tbody>

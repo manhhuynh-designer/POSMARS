@@ -17,6 +17,9 @@ interface LeadFormConfig {
     submit_text: string
     consent_text: string
 
+    // Validation
+    check_duplicate_phone?: boolean
+
     // Visual Customization
     title?: string
     description?: string
@@ -47,6 +50,18 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
         setFormData({ ...formData, [fieldId]: value })
     }
 
+    // Validate phone number format: 10 digits, starts with 0
+    const validatePhoneFormat = (phone: string): boolean => {
+        const phoneRegex = /^0\d{9}$/
+        return phoneRegex.test(phone)
+    }
+
+    // Find phone field in config (type === 'tel')
+    const getPhoneFieldId = (): string | null => {
+        const phoneField = config.fields.find(f => f.type === 'tel')
+        return phoneField?.id || null
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
@@ -55,6 +70,7 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
             return
         }
 
+        // Validate required fields
         for (const field of config.fields) {
             if (field.required && !formData[field.id]) {
                 setError(`Vui lòng nhập ${field.label}`)
@@ -62,8 +78,38 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
             }
         }
 
+        // Validate phone format if phone field exists
+        const phoneFieldId = getPhoneFieldId()
+        if (phoneFieldId && formData[phoneFieldId]) {
+            const phone = formData[phoneFieldId]
+
+            if (!validatePhoneFormat(phone)) {
+                setError('Số điện thoại không hợp lệ. Vui lòng nhập 10 chữ số, bắt đầu bằng số 0')
+                return
+            }
+        }
+
         setLoading(true)
         setError('')
+
+        // Check for duplicate phone if enabled in config and phone field exists
+        if (config.check_duplicate_phone && phoneFieldId && formData[phoneFieldId]) {
+            const phone = formData[phoneFieldId]
+
+            const { data: isDuplicate, error: checkErr } = await supabase.rpc('check_duplicate_phone', {
+                p_project_id: projectId,
+                p_phone: phone
+            })
+
+            if (checkErr) {
+                console.error('Error checking duplicate phone:', checkErr)
+                // Continue with submission if check fails (graceful degradation)
+            } else if (isDuplicate) {
+                setLoading(false)
+                setError('Số điện thoại này đã được đăng ký. Vui lòng sử dụng số điện thoại khác.')
+                return
+            }
+        }
 
         const { data, error: err } = await supabase.rpc('create_lead', {
             p_project_id: projectId,

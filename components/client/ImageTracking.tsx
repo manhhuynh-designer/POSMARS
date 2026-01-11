@@ -978,6 +978,10 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     title: 'My AR Experience',
                     text: 'Check out my AR video!',
                 })
+                // Track share event
+                if ((window as any).trackGAEvent) {
+                    (window as any).trackGAEvent('share', { share_type: 'video' })
+                }
             } else {
                 // Fallback to download if sharing not supported
                 downloadRecording()
@@ -1003,6 +1007,10 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     title: 'My AR Experience',
                     text: 'Check out my AR photo!',
                 })
+                // Track share event
+                if ((window as any).trackGAEvent) {
+                    (window as any).trackGAEvent('share', { share_type: 'photo' })
+                }
             } else {
                 handleDownload()
                 alert('Trình duyệt không hỗ trợ chia sẻ ảnh. Ảnh đã được tải về máy.')

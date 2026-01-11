@@ -37,6 +37,13 @@ export default function ResultScreen({ type, template, result, config, onRestart
                     text: config?.share_text || result?.message || 'Check out my experience!',
                     url: window.location.href
                 })
+                // Track share event
+                if ((window as any).trackGAEvent) {
+                    (window as any).trackGAEvent('share', {
+                        share_type: result?.imageUrl ? 'photo' : 'link',
+                        source: 'result_screen'
+                    })
+                }
             } else {
                 await navigator.clipboard.writeText(window.location.href)
                 alert('Link đã được sao chép!')

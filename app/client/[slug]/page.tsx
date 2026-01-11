@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import LeadForm from '@/components/client/LeadForm'
 import ResultScreen from '@/components/client/ResultScreen'
 import LuckyDraw from '@/components/client/LuckyDraw'
@@ -15,7 +15,12 @@ type Step = 'lead_form' | 'interaction' | 'result'
 
 export default function ClientPage() {
     const params = useParams()
+    const searchParams = useSearchParams()
     const slug = params.slug as string
+
+    // POS tracking from URL params
+    const posId = searchParams.get('pos_id') || ''
+    const locationName = searchParams.get('loc') || ''
 
     const [loading, setLoading] = useState(true)
     const [project, setProject] = useState<any>(null)
@@ -40,6 +45,11 @@ export default function ClientPage() {
         } else {
             setProject(data)
 
+            // Inject Google Analytics if ga_id is configured
+            if (data.ga_id) {
+                injectGoogleAnalytics(data.ga_id)
+            }
+
             // Check if lead form is disabled - skip directly to interaction
             const hasLeadForm = data.lead_form_config &&
                 data.lead_form_config.fields &&
@@ -52,12 +62,118 @@ export default function ClientPage() {
         setLoading(false)
     }
 
+    // Google Analytics injection with POS tracking
+    const injectGoogleAnalytics = (gaId: string) => {
+        // Check if already injected
+        if (document.getElementById('ga-script')) return
+
+        // Create gtag script
+        const gtagScript = document.createElement('script')
+        gtagScript.id = 'ga-script'
+        gtagScript.async = true
+        gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`
+        document.head.appendChild(gtagScript)
+
+        // Initialize gtag with POS custom dimensions
+        const initScript = document.createElement('script')
+        initScript.id = 'ga-init'
+        initScript.innerHTML = `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${gaId}', {
+                page_path: window.location.pathname,
+                send_page_view: true,
+                custom_map: {
+                    'dimension1': 'pos_id',
+                    'dimension2': 'location_name'
+                },
+                pos_id: '${posId}',
+                location_name: '${locationName}'
+            });
+        `
+        document.head.appendChild(initScript)
+
+            // Expose POS info for child components
+            ; (window as any).getPOSInfo = () => ({ posId, locationName })
+
+        console.log('📊 Google Analytics initialized:', gaId, 'POS:', posId, locationName)
+    }
+
+    // GA Event Tracking Helper - exposed globally for child components
+    const trackEvent = (eventName: string, params?: Record<string, any>) => {
+        if (typeof window !== 'undefined' && (window as any).gtag) {
+            (window as any).gtag('event', eventName, {
+                event_category: 'engagement',
+                ...params
+            })
+            console.log('📊 GA Event:', eventName, params)
+        }
+    }
+
+    // Expose to window for child components (share tracking, etc.)
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            (window as any).trackGAEvent = trackEvent
+        }
+        return () => {
+            if (typeof window !== 'undefined') {
+                delete (window as any).trackGAEvent
+            }
+        }
+    }, [])
+
+    // Track experience start time
+    const [experienceStartTime, setExperienceStartTime] = useState<number | null>(null)
+
     const handleLeadComplete = (id: number) => {
         setLeadId(id)
         setStep('interaction')
+        setExperienceStartTime(Date.now()) // Start timing
+
+        // Track lead form submission with POS info
+        trackEvent('lead_form_submit', {
+            project_slug: slug,
+            lead_id: id,
+            pos_id: posId,
+            location_name: locationName
+        })
     }
 
     const handleInteractionComplete = async (resultData?: any) => {
+        // Calculate experience duration
+        const duration = experienceStartTime
+            ? Math.round((Date.now() - experienceStartTime) / 1000)
+            : 0
+
+        // Track completion with duration and POS info
+        if (resultData?.imageUrl) {
+            trackEvent('photo_capture', {
+                project_slug: slug,
+                duration_seconds: duration,
+                pos_id: posId,
+                location_name: locationName
+            })
+        } else if (resultData?.prize) {
+            trackEvent('game_complete', {
+                project_slug: slug,
+                prize: resultData.prize?.name || 'unknown',
+                duration_seconds: duration,
+                pos_id: posId,
+                location_name: locationName
+            })
+        }
+
+        // Track experience duration with POS info
+        trackEvent('experience_complete', {
+            project_slug: slug,
+            duration_seconds: duration,
+            interaction_type: project?.interaction_type,
+            template: project?.template,
+            pos_id: posId,
+            location_name: locationName
+        })
+
         // Save result securely via RPC
         if (leadId && resultData) {
             await supabase.rpc('update_lead_result', {
@@ -69,6 +185,14 @@ export default function ClientPage() {
         setStep('result')
     }
 
+    // Track share event (export for child components)
+    const handleShare = (type: 'photo' | 'video') => {
+        trackEvent('share', {
+            project_slug: slug,
+            share_type: type
+        })
+    }
+
     const handleRestart = () => {
         // Check if lead form is enabled for restart logic
         const hasLeadForm = project?.lead_form_config &&
@@ -76,6 +200,7 @@ export default function ClientPage() {
             project.lead_form_config.fields.length > 0
 
         setStep(hasLeadForm ? 'lead_form' : 'interaction')
+        setExperienceStartTime(null) // Reset timer
         setResult(null)
     }
 
