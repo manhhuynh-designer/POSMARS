@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
         // 3. Generate Signed URL
         try {
+            const token = crypto.randomUUID();
             const [url] = await file.getSignedUrl({
                 version: 'v4',
                 action: 'write',
@@ -45,8 +46,8 @@ export async function POST(req: NextRequest) {
                 contentType,
             });
 
-            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(filename)}?alt=media`;
-            return NextResponse.json({ url, publicUrl });
+            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(filename)}?alt=media&token=${token}`;
+            return NextResponse.json({ url, publicUrl, token });
         } catch (signedUrlError: any) {
             console.error('getSignedUrl Error Details:', signedUrlError);
             return NextResponse.json({

@@ -1,0 +1,41 @@
+# AI Agent Rules
+
+## General Behavior
+- Be concise and direct. Focus on the code and solution.
+- deeply understand the `context.md` before answering.
+
+## Tech Stack & Coding Standards
+- **Framework**: Use Next.js 16 (App Router).
+- **Language**: TypeScript. Use strict typing where possible; avoid `any` unless necessary.
+- **Styling**: Use Tailwind CSS for all styling. Avoid vanilla CSS files unless for global overrides.
+  - Use `clsx` or `cn` (if available) for conditional classes.
+- **State Management**: Use React Hooks (`useState`, `useEffect`, `useCallback`, etc.).
+
+## Naming Conventions
+- **Directories**: kebab-case (e.g., `components/admin-panel`).
+- **Files**:
+  - Components: PascalCase (e.g., `UserProfile.tsx`).
+  - Utilities/Hooks/Configs: camelCase (e.g., `useAuth.ts`, `firebaseConfig.ts`).
+  - Next.js Routes: kebab-case folders with `page.tsx`, `layout.tsx`.
+
+## Best Practices
+- **Components**: Write functional components with named exports.
+- **Imports**: Use absolute imports (`@/...`) if configured in `tsconfig.json`, otherwise consistent relative imports.
+- **Async/Await**: Prefer `async/await` over raw Promises.
+- **Error Handling**: Implement proper error handling in API routes and UI interactions.
+- **Performance**: Optimize for performance (Server Components where applicable, lazy loading for heavy AR/3D libs).
+
+## Specifics for this Project
+- **AR/3D**: When working with Three.js or MindAR, ensure proper cleanup of resources in `useEffect` to prevent memory leaks.
+- **Firebase/Supabase**: Keep backend logic (Admin SDK) in API routes or Server Actions; Client SDK in components/hooks.
+
+## Security
+- **Environment Variables**: Store secrets in `.env.local`. NEVER commit them. Prefix public vars with `NEXT_PUBLIC_`.
+- **Input Validation**: Validate all inputs (API payloads, forms) using Zod or similar libraries.
+- **Authentication & Authorization**:
+  - Protect sensitive routes (especially `/admin`) with Middleware.
+  - Verify user permissions on the server-side (API routes/Server Actions), not just client-side.
+  - Enable and test Row Level Security (RLS) policies for Supabase tables.
+- **Data Protection**:
+  - Sanitize user-generated content to prevent XSS.
+  - Use parameterized queries/ORM methods to prevent SQL injection.

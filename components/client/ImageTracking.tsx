@@ -261,6 +261,62 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
             });
         }
 
+        // Register fix-rotation-order component
+        if (!(window as any).AFRAME.components['fix-rotation-order']) {
+            (window as any).AFRAME.registerComponent('fix-rotation-order', {
+                init: function () {
+                    const el = this.el;
+                    const applyOrder = () => {
+                        if (el.object3D) {
+                            el.object3D.rotation.order = 'XZY';
+                        }
+                    };
+                    applyOrder();
+                    el.addEventListener('loaded', applyOrder);
+                    el.addEventListener('model-loaded', applyOrder);
+                }
+            });
+        }
+
+        // Register loop-animation-controller component
+        if (!(window as any).AFRAME.components['loop-animation-controller']) {
+            (window as any).AFRAME.registerComponent('loop-animation-controller', {
+                schema: {
+                    duration: { type: 'number', default: 0 },
+                    enabled: { type: 'boolean', default: false }
+                },
+                init: function () {
+                    if (!this.data.enabled) return;
+                    this.timer = null;
+                    this.onStart = this.onStart.bind(this);
+                    this.onStop = this.onStop.bind(this);
+                    this.el.addEventListener('targetFound', this.onStart);
+                    this.el.addEventListener('targetLost', this.onStop);
+                },
+                onStart: function () {
+                    if (this.timer) clearInterval(this.timer);
+                    // Initial run is triggered by targetFound events on animation
+                    // We need to trigger restart after duration
+                    if (this.data.duration > 0) {
+                        this.timer = setInterval(() => {
+                            this.el.emit('restart_animation');
+                        }, this.data.duration * 1000); // ms
+                    }
+                },
+                onStop: function () {
+                    if (this.timer) {
+                        clearInterval(this.timer);
+                        this.timer = null;
+                    }
+                },
+                remove: function () {
+                    this.onStop();
+                    this.el.removeEventListener('targetFound', this.onStart);
+                    this.el.removeEventListener('targetLost', this.onStop);
+                }
+            });
+        }
+
         // Register occlusion-material component only if not already registered
         if (!(window as any).AFRAME.components['occlusion-material']) {
             (window as any).AFRAME.registerComponent('occlusion-material', {
@@ -376,42 +432,68 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                         return
                     }
 
-                    // Check if RGBELoader is available (from aframe-extras or manual load)
-                    let RGBELoader = THREE.RGBELoader
-                    if (!RGBELoader) {
-                        // Try to load RGBELoader dynamically
-                        console.log('🌅 HDR: Loading RGBELoader...')
+                    // Check extension
+                    const url = config.environment_url!;
+                    const isEXR = url.toLowerCase().includes('.exr');
+                    const loaderName = isEXR ? 'EXRLoader' : 'RGBELoader';
+                    const cdnUrl = isEXR
+                        ? 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/EXRLoader.js'
+                        : 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js';
+
+                    // Check if Loader is available
+                    let EnvLoader = THREE[loaderName]
+                    if (!EnvLoader) {
+                        // Try to load Loader dynamically
+                        console.log(`🌅 HDR: Loading ${loaderName}...`)
                         const script = document.createElement('script')
-                        script.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js'
+                        script.src = cdnUrl
                         await new Promise((resolve, reject) => {
                             script.onload = resolve
                             script.onerror = reject
                             document.head.appendChild(script)
                         })
-                        RGBELoader = THREE.RGBELoader
+                        EnvLoader = THREE[loaderName]
                     }
 
-                    if (!RGBELoader) {
-                        console.warn('⚠️ HDR: RGBELoader not available')
+                    if (!EnvLoader) {
+                        console.warn(`⚠️ HDR: ${loaderName} not available`)
                         return
                     }
 
-                    const loader = new RGBELoader()
-                    loader.load(config.environment_url!, (hdrTexture: any) => {
-                        hdrTexture.mapping = THREE.EquirectangularReflectionMapping
+                    // Diagnostic Fetch
+                    try {
+                        console.log(`🌅 HDR: Fetch Check Start for ${url}`);
+                        const response = await fetch(url, { method: 'HEAD' });
+                        console.log(`🌅 HDR: Fetch Check Status: ${response.status} ${response.statusText}`);
+                        console.log(`🌅 HDR: Content-Type: ${response.headers.get('content-type')}`);
+                        console.log(`🌅 HDR: Content-Length: ${response.headers.get('content-length')}`);
+                    } catch (fetchErr) {
+                        console.error('🌅 HDR: Fetch Check Failed:', fetchErr);
+                    }
+
+                    const loader = new EnvLoader()
+                    loader.setCrossOrigin('anonymous')
+                    // For EXR, we might need to set data type if not default
+                    if (isEXR) {
+                        loader.setDataType(THREE.FloatType); // Often required for EXR
+                    }
+
+                    loader.load(url, (texture: any) => {
+                        texture.mapping = THREE.EquirectangularReflectionMapping
 
                         // Get the Three.js scene from A-Frame
                         const threeScene = (scene as any).object3D
                         if (threeScene) {
                             // Set environment for IBL (lighting/reflections)
-                            threeScene.environment = hdrTexture
+                            threeScene.environment = texture
                             // Keep background null for AR (camera feed visible)
                             threeScene.background = null
-                            console.log('✅ HDR: Environment map applied for IBL')
+                            console.log(`✅ HDR: ${isEXR ? 'EXR' : 'HDR'} Environment map applied for IBL`)
                         }
                     }, undefined, (error: any) => {
-                        console.error('❌ HDR: Failed to load environment map:', error)
+                        console.error(`❌ HDR: Failed to load ${isEXR ? 'EXR' : 'HDR'} map:`, error)
                     })
+
                 } catch (error) {
                     console.error('❌ HDR: Error setting up environment map:', error)
                 }
@@ -424,12 +506,12 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
         scene.appendChild(camera)
 
         // Keyframe animation helper function
-        const applyKeyframes = (el: HTMLElement, asset: ARAsset) => {
-            if (!asset.keyframes || asset.keyframes.length === 0) return;
+        const applyKeyframes = (el: HTMLElement, asset: ARAsset, allowedProps: string[] = ['position', 'rotation', 'scale', 'opacity']) => {
+            if (!asset.keyframes || asset.keyframes.length === 0) return 0;
             const sortedKfs = [...asset.keyframes].sort((a, b) => a.time - b.time);
-            const props = ['position', 'rotation', 'scale', 'opacity'];
+            let maxTime = 0;
 
-            props.forEach(prop => {
+            allowedProps.forEach(prop => {
                 const kfsForProp = sortedKfs.filter(k => k.property === prop);
                 if (kfsForProp.length === 0) return;
 
@@ -440,6 +522,8 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     const startTime = prevKf ? prevKf.time : 0;
                     const duration = (kf.time - startTime) * 1000; // to ms
                     const delay = startTime * 1000;
+
+                    if (kf.time > maxTime) maxTime = kf.time;
 
                     let propertyName = prop;
                     if (prop === 'opacity') {
@@ -455,10 +539,13 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                         }
                     }
 
-                    const animValue = `property: ${propertyName}; from: ${prevKf ? prevKf.value : (prop === 'scale' ? "1 1 1" : (prop === 'opacity' ? "1" : "0 0 0"))}; to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: targetFound; autoplay: false;`
+                    // Loop Support: Listen for restart_animation event
+                    const animValue = `property: ${propertyName}; from: ${prevKf ? prevKf.value : (prop === 'scale' ? "1 1 1" : (prop === 'opacity' ? "1" : "0 0 0"))}; to: ${kf.value}; dur: ${Math.max(1, duration)}; delay: ${delay}; easing: ${kf.easing || 'linear'}; startEvents: targetFound, restart_animation; autoplay: false;`
                     el.setAttribute(animName, animValue)
                 });
             });
+
+            return maxTime;
         }
 
         // Helper function to render assets on a target entity
@@ -474,6 +561,7 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                 assetEntity.setAttribute('id', `${asset.id}-${targetIndex}`)
                 assetEntity.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`)
                 assetEntity.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`)
+                assetEntity.setAttribute('fix-rotation-order', '')
                 assetEntity.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`)
 
                 if (asset.type === '3d' || asset.type === 'occlusion') {
@@ -502,7 +590,18 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     // Pro Mixer Keyframes (Option B)
                     // Now unified consistent logic with Admin Preview
                     if (asset.keyframes && asset.keyframes.length > 0) {
-                        applyKeyframes(model, asset);
+                        // Apply Transform animations to Container (assetEntity)
+                        const dur1 = applyKeyframes(assetEntity, asset, ['position', 'rotation', 'scale']);
+                        // Apply Opacity animations to Content (model)
+                        const dur2 = applyKeyframes(model, asset, ['opacity']);
+
+                        const maxDur = Math.max(dur1, dur2);
+
+                        // Default to looping if not explicitly disabled or if user expects it
+                        if (asset.loop_animation !== false) {
+                            if (dur1 > 0) assetEntity.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                            if (dur2 > 0) model.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                        }
                     } else {
                         // Default static state if no keyframes
                     }
@@ -557,7 +656,15 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     plane.setAttribute('height', (asset.video_height || 0.56).toString())
 
                     // Video Keyframes
-                    applyKeyframes(plane, asset);
+                    const dur1 = applyKeyframes(assetEntity, asset, ['position', 'rotation', 'scale']);
+                    const dur2 = applyKeyframes(plane, asset, ['opacity']);
+
+                    const maxDur = Math.max(dur1, dur2);
+
+                    if (asset.loop_animation !== false && asset.keyframes && asset.keyframes.length > 0) {
+                        if (dur1 > 0) assetEntity.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                        if (dur2 > 0) plane.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                    }
 
                     // Error handling: Visual feedback in AR
                     videoEl.addEventListener('error', (e) => {
@@ -603,7 +710,17 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     imageEl.setAttribute('material', 'shader: flat; transparent: true')
 
                     // Apply keyframes if present
-                    applyKeyframes(imageEl, asset)
+                    if (asset.keyframes && asset.keyframes.length > 0) {
+                        const dur1 = applyKeyframes(assetEntity, asset, ['position', 'rotation', 'scale']);
+                        const dur2 = applyKeyframes(imageEl, asset, ['opacity']);
+
+                        const maxDur = Math.max(dur1, dur2);
+
+                        if (asset.loop_animation !== false) {
+                            if (dur1 > 0) assetEntity.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                            if (dur2 > 0) imageEl.setAttribute('loop-animation-controller', `duration: ${maxDur}; enabled: true`);
+                        }
+                    }
 
                     assetEntity.appendChild(imageEl)
                 }

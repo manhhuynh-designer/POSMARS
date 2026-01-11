@@ -4,21 +4,23 @@ import { OrbitControls, useGLTF, Grid, useVideoTexture, useTexture, Html, Enviro
 import { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { Box, Loader2, Move, RotateCcw, Play, Pause } from 'lucide-react'
-import { ImageTrackingConfig, ARAsset, VideoKeyframe } from './TemplateConfigBuilder'
+import { ImageTrackingConfig, ARAsset, VideoKeyframe } from './template-builder/types'
 import { interpolateKeyframes, getKeyframeDuration } from '@/lib/animation-utils'
-
-interface StudioPreviewProps {
-    config: ImageTrackingConfig
-    debugMode?: boolean
-    onClose: () => void
-    selectedTargetIndex?: number  // -1 for global defaults, 0+ for specific targets
-}
 
 // Shared animation state for playback control
 interface AnimationState {
     isPlaying: boolean
     currentTime: number
     startTimestamp: number
+}
+
+interface StudioPreviewProps {
+    config: ImageTrackingConfig
+    debugMode?: boolean
+    onClose: () => void
+    selectedTargetIndex?: number  // -1 for global defaults, 0+ for specific targets
+    playbackState: AnimationState
+    onPlaybackChange: (state: AnimationState) => void
 }
 
 // Occlusion GLTF Component
@@ -95,26 +97,32 @@ function OcclusionModel({ asset, animState, debugMode }: { asset: ARAsset; animS
     const loop = asset.loop_animation !== false
 
     useFrame(() => {
-        if (!ref.current || keyframes.length === 0) return
-        if (!animState.isPlaying) return
+        if (!ref.current) return
+        ref.current.rotation.order = 'XZY'
 
-        const elapsed = (performance.now() - animState.startTimestamp) / 1000
-        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+        // Calculate time: when playing, use elapsed; when paused, use currentTime
+        const t = animState.isPlaying
+            ? (performance.now() - animState.startTimestamp) / 1000 + animState.currentTime
+            : animState.currentTime
+
+        // If no keyframes, use initial transform
+        if (keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale, asset.scale, asset.scale)
+            return
+        }
+
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], t, duration, loop, {
             position: asset.position,
             rotation: asset.rotation,
             scale: [asset.scale, asset.scale, asset.scale],
             opacity: 1
         })
-
-        // DEBUG LOG
-        if (Math.round(elapsed) % 2 === 0 && Math.random() < 0.05) {
-            console.log('Occlusion Anim:', {
-                id: asset.id,
-                pos: values.position,
-                kfs: keyframes.length,
-                playing: animState.isPlaying
-            })
-        }
 
         ref.current.position.set(...values.position)
         ref.current.rotation.set(
@@ -145,19 +153,6 @@ function OcclusionModel({ asset, animState, debugMode }: { asset: ARAsset; animS
         }
     })
 
-    // Initial transform (if no animation)
-    useEffect(() => {
-        if (ref.current && keyframes.length === 0) {
-            ref.current.position.set(...asset.position)
-            ref.current.rotation.set(
-                asset.rotation[0] * Math.PI / 180,
-                asset.rotation[1] * Math.PI / 180,
-                asset.rotation[2] * Math.PI / 180
-            )
-            ref.current.scale.set(asset.scale, asset.scale, asset.scale)
-        }
-    }, [asset.position, asset.rotation, asset.scale, keyframes.length])
-
     const isPrimitive = asset.occlusion_shape && asset.occlusion_shape !== 'model'
 
     return (
@@ -180,11 +175,27 @@ function Model({ asset, animState }: { asset: ARAsset; animState: AnimationState
     const loop = asset.loop_animation !== false
 
     useFrame(() => {
-        if (!ref.current || keyframes.length === 0) return
-        if (!animState.isPlaying) return
+        if (!ref.current) return
+        ref.current.rotation.order = 'XZY'
 
-        const elapsed = (performance.now() - animState.startTimestamp) / 1000
-        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+        // Calculate time: when playing, use elapsed; when paused, use currentTime
+        const t = animState.isPlaying
+            ? (performance.now() - animState.startTimestamp) / 1000 + animState.currentTime
+            : animState.currentTime
+
+        // If no keyframes, use initial transform
+        if (keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale, asset.scale, asset.scale)
+            return
+        }
+
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], t, duration, loop, {
             position: asset.position,
             rotation: asset.rotation,
             scale: [asset.scale, asset.scale, asset.scale],
@@ -249,11 +260,29 @@ function VideoPlane({ asset, animState }: { asset: ARAsset; animState: Animation
     const loop = asset.loop_animation !== false
 
     useFrame(() => {
-        if (!ref.current || keyframes.length === 0) return
-        if (!animState.isPlaying) return
+        if (!ref.current) return
+        ref.current.rotation.order = 'XZY'
 
-        const elapsed = (performance.now() - animState.startTimestamp) / 1000
-        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+        // Calculate time: when playing, use elapsed; when paused, use currentTime
+        const t = animState.isPlaying
+            ? (performance.now() - animState.startTimestamp) / 1000 + animState.currentTime
+            : animState.currentTime
+
+        const ratio = (asset.video_width || 1) / (asset.video_height || 1)
+
+        // If no keyframes, use initial transform
+        if (keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale * ratio, asset.scale, asset.scale)
+            return
+        }
+
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], t, duration, loop, {
             position: asset.position,
             rotation: asset.rotation,
             scale: [asset.scale, asset.scale, asset.scale],
@@ -266,8 +295,6 @@ function VideoPlane({ asset, animState }: { asset: ARAsset; animState: Animation
             values.rotation[1] * Math.PI / 180,
             values.rotation[2] * Math.PI / 180
         )
-        // Maintain aspect ratio for video
-        const ratio = (asset.video_width || 1) / (asset.video_height || 1)
         ref.current.scale.set(values.scale[0] * ratio, values.scale[1], values.scale[2])
 
         // Apply opacity
@@ -283,19 +310,7 @@ function VideoPlane({ asset, animState }: { asset: ARAsset; animState: Animation
         }
     })
 
-    // Initial transform (if no animation)
-    useEffect(() => {
-        if (ref.current && keyframes.length === 0) {
-            ref.current.position.set(...asset.position)
-            ref.current.rotation.set(
-                asset.rotation[0] * Math.PI / 180,
-                asset.rotation[1] * Math.PI / 180,
-                asset.rotation[2] * Math.PI / 180
-            )
-            const ratio = (asset.video_width || 1) / (asset.video_height || 1)
-            ref.current.scale.set(asset.scale * ratio, asset.scale, asset.scale)
-        }
-    }, [asset.position, asset.rotation, asset.scale, asset.video_width, asset.video_height, keyframes.length])
+    // Initial transform handled by useFrame now
 
     return (
         <mesh ref={ref}>
@@ -322,11 +337,30 @@ function ImagePlane({ asset, animState }: { asset: ARAsset; animState: Animation
     const loop = asset.loop_animation !== false
 
     useFrame(() => {
-        if (!ref.current || keyframes.length === 0) return
-        if (!animState.isPlaying) return
+        if (!ref.current) return
+        ref.current.rotation.order = 'XZY'
 
-        const elapsed = (performance.now() - animState.startTimestamp) / 1000
-        const values = interpolateKeyframes(keyframes as VideoKeyframe[], elapsed, duration, loop, {
+        // Calculate time: when playing, use elapsed; when paused, use currentTime
+        const t = animState.isPlaying
+            ? (performance.now() - animState.startTimestamp) / 1000 + animState.currentTime
+            : animState.currentTime
+
+        const w = asset.image_width ?? 1
+        const h = asset.image_height ?? 1
+
+        // If no keyframes, use initial transform
+        if (keyframes.length === 0) {
+            ref.current.position.set(...asset.position)
+            ref.current.rotation.set(
+                asset.rotation[0] * Math.PI / 180,
+                asset.rotation[1] * Math.PI / 180,
+                asset.rotation[2] * Math.PI / 180
+            )
+            ref.current.scale.set(asset.scale * w, asset.scale * h, asset.scale)
+            return
+        }
+
+        const values = interpolateKeyframes(keyframes as VideoKeyframe[], t, duration, loop, {
             position: asset.position,
             rotation: asset.rotation,
             scale: [asset.scale, asset.scale, asset.scale],
@@ -339,9 +373,6 @@ function ImagePlane({ asset, animState }: { asset: ARAsset; animState: Animation
             values.rotation[1] * Math.PI / 180,
             values.rotation[2] * Math.PI / 180
         )
-        // Apply scale with aspect ratio
-        const w = asset.image_width ?? 1
-        const h = asset.image_height ?? 1
         ref.current.scale.set(values.scale[0] * w, values.scale[1] * h, values.scale[2])
 
         // Apply opacity
@@ -357,25 +388,36 @@ function ImagePlane({ asset, animState }: { asset: ARAsset; animState: Animation
         }
     })
 
-    // Initial transform (if no animation)
-    useEffect(() => {
-        if (ref.current && keyframes.length === 0) {
-            ref.current.position.set(...asset.position)
-            ref.current.rotation.set(
-                asset.rotation[0] * Math.PI / 180,
-                asset.rotation[1] * Math.PI / 180,
-                asset.rotation[2] * Math.PI / 180
-            )
-            const w = asset.image_width ?? 1
-            const h = asset.image_height ?? 1
-            ref.current.scale.set(asset.scale * w, asset.scale * h, asset.scale)
-        }
-    }, [asset.position, asset.rotation, asset.scale, asset.image_width, asset.image_height, keyframes.length])
+    // Initial transform handled by useFrame now
 
     return (
         <mesh ref={ref}>
             <planeGeometry args={[1, 1]} />
             <meshBasicMaterial map={texture} toneMapped={false} transparent alphaTest={0.1} side={THREE.DoubleSide} />
+        </mesh>
+    )
+}
+
+// Target Image Plane representing the marker
+function TargetImagePlane({ thumbnail }: { thumbnail?: string }) {
+    if (!thumbnail) return null
+    // Wrap in Suspense to handle async texture loading
+    return (
+        <Suspense fallback={null}>
+            <TargetImagePlaneMesh url={thumbnail} />
+        </Suspense>
+    )
+}
+
+// Inner component that uses hooks unconditionally
+function TargetImagePlaneMesh({ url }: { url: string }) {
+    const texture = useTexture(url)
+    // Target lies flat on ground (XZ plane) for easier Studio visualization
+    // In AR it would be vertical, but we apply conversion in
+    return (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]}>
+            <planeGeometry args={[1.5, 1.5]} />
+            <meshBasicMaterial map={texture} transparent opacity={0.3} toneMapped={false} side={THREE.DoubleSide} />
         </mesh>
     )
 }
@@ -392,28 +434,93 @@ function Loader() {
     )
 }
 
-export default function StudioPreview({ config, debugMode = false, onClose, selectedTargetIndex = -1 }: StudioPreviewProps) {
-    const [animState, setAnimState] = useState<AnimationState>({
-        isPlaying: true,
-        currentTime: 0,
-        startTimestamp: performance.now()
-    })
+// Safe Environment with error handling
+function SafeEnvironment({ url, onLoadError }: { url: string; onLoadError?: () => void }) {
+    const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading')
+
+    useEffect(() => {
+        if (!url) {
+            setStatus('ok')
+            return
+        }
+
+        const checkUrl = async () => {
+            console.log('🔍 Checking Environment URL:', url)
+            try {
+                // Try HEAD request first (more efficient) to check status and content type
+                const response = await fetch(url, { method: 'HEAD' })
+
+                const contentType = response.headers.get('Content-Type') || ''
+                if (response.status === 404 || contentType.includes('text/html') || contentType.includes('application/json')) {
+                    console.warn(`HDR Load Fallback: ${url} is invalid (Status: ${response.status}, Type: ${contentType}). Falling back to ambient lighting.`)
+                    setStatus('error')
+                    onLoadError?.()
+                    return
+                }
+
+                setStatus('ok')
+            } catch (e) {
+                // Fallback to GET if HEAD is blocked (some servers block HEAD)
+                try {
+                    const response = await fetch(url)
+                    const contentType = response.headers.get('Content-Type') || ''
+                    if (response.status === 404 || contentType.includes('text/html') || contentType.includes('application/json')) {
+                        console.warn(`HDR Load Fallback (GET): ${url} is invalid (Status: ${response.status}, Type: ${contentType}). Falling back to ambient lighting.`)
+                        setStatus('error')
+                        onLoadError?.()
+                    } else {
+                        setStatus('ok')
+                    }
+                } catch (e2) {
+                    // CORS might prevent reading headers/status
+                    // In this case, we have to let Environment try and fail via Suspense/ErrorBoundary
+                    console.warn(`HDR CORS/Network warning for ${url}, attempting load anyway.`)
+                    setStatus('ok')
+                }
+            }
+        }
+        checkUrl()
+    }, [url, onLoadError])
+
+    if (status === 'error') return null
+    if (status === 'loading') return null
+
+    return (
+        <Suspense fallback={null}>
+            <Environment files={url} background={false} />
+        </Suspense>
+    )
+}
+
+export default function StudioPreview({
+    config,
+    debugMode = false,
+    onClose,
+    selectedTargetIndex = -1,
+    playbackState,
+    onPlaybackChange
+}: StudioPreviewProps) {
+    // Local copy for ease of use in R3F, though we prefer the prop
+    const animState = playbackState;
 
     const togglePlayback = () => {
-        setAnimState(prev => ({
-            ...prev,
-            isPlaying: !prev.isPlaying,
-            startTimestamp: prev.isPlaying ? prev.startTimestamp : performance.now()
-        }))
+        onPlaybackChange({
+            ...playbackState,
+            isPlaying: !playbackState.isPlaying,
+            currentTime: playbackState.currentTime,
+            startTimestamp: performance.now()
+        })
     }
 
     const restartAnimation = () => {
-        setAnimState({
+        onPlaybackChange({
             isPlaying: true,
             currentTime: 0,
             startTimestamp: performance.now()
         })
     }
+
+    const currentTarget = selectedTargetIndex >= 0 ? config.targets?.[selectedTargetIndex] : null
 
     return (
         <div className="w-full h-full relative bg-[#050505] rounded-[2.5rem] overflow-hidden">
@@ -432,12 +539,15 @@ export default function StudioPreview({ config, debugMode = false, onClose, sele
                     {/* Background */}
                     <color attach="background" args={['#0a0a0b']} />
 
-                    {/* Environment Map (HDR) */}
+                    {/* Environment Map (HDR) with Error Handling */}
                     {config.environment_url && (
-                        <Environment files={config.environment_url} background={false} />
+                        <SafeEnvironment
+                            url={config.environment_url}
+                            onLoadError={() => console.warn('⚠️ Environment HDR load failed, falling back to default lighting.')}
+                        />
                     )}
 
-                    {/* Lighting - uses config values */}
+                    {/* Lighting - uses config values, with fallback if HDR is missing/failed */}
                     <ambientLight intensity={config.ambient_intensity ?? (config.environment_url ? 0.3 : 0.8)} />
                     <directionalLight position={[5, 5, 5]} intensity={config.directional_intensity ?? (config.environment_url ? 0.5 : 1)} castShadow />
                     <directionalLight position={[-5, 3, -5]} intensity={0.4} />
@@ -453,53 +563,67 @@ export default function StudioPreview({ config, debugMode = false, onClose, sele
                         sectionColor="#333"
                         fadeDistance={15}
                         fadeStrength={1}
-                        position={[0, 0, 0]}
+                        position={[0, -0.01, 0]}
                     />
 
-                    {/* Assets - Multi-Target Support */}
-                    {(() => {
-                        // Resolve assets based on selected target
-                        let currentAssets: ARAsset[] = []
-                        const targetIndex = selectedTargetIndex ?? -1
+                    {/* Target Landmark Plane - Vertical to match AR */}
+                    <group>
+                        {/* Target Plane stands vertically like in AR */}
+                        <Suspense fallback={null}>
+                            {currentTarget?.thumbnail && (
+                                <TargetImagePlane thumbnail={currentTarget.thumbnail} />
+                            )}
+                        </Suspense>
+                    </group>
 
-                        if (targetIndex === -1) {
-                            // Global defaults selected
-                            currentAssets = config.default_assets || config.assets || []
-                        } else {
-                            // Specific target selected
-                            const target = config.targets?.[targetIndex]
-                            if (target) {
-                                // Check if inheriting from another target
-                                if (target.extends !== undefined) {
-                                    if (target.extends === -1) {
-                                        currentAssets = config.default_assets || []
+                    {/* Assets wrapped in a rotation group to match horizontal target */}
+                    {/* In AR: target is vertical (XY), assets relative to it */}
+                    {/* In Studio: target is horizontal (XZ), so we rotate assets -90° on X to align */}
+                    <group rotation={[-Math.PI / 2, 0, 0]}>
+                        {(() => {
+                            // Resolve assets based on selected target
+                            let currentAssets: ARAsset[] = []
+                            const targetIndex = selectedTargetIndex ?? -1
+
+                            if (targetIndex === -1) {
+                                // Global defaults selected
+                                currentAssets = config.default_assets || config.assets || []
+                            } else {
+                                // Specific target selected
+                                const target = config.targets?.[targetIndex]
+                                if (target) {
+                                    // Check if inheriting from another target
+                                    if (target.extends !== undefined) {
+                                        if (target.extends === -1) {
+                                            currentAssets = config.default_assets || []
+                                        } else {
+                                            const parentTarget = config.targets?.find(t => t.targetIndex === target.extends)
+                                            currentAssets = parentTarget?.assets || config.default_assets || []
+                                        }
                                     } else {
-                                        const parentTarget = config.targets?.find(t => t.targetIndex === target.extends)
-                                        currentAssets = parentTarget?.assets || config.default_assets || []
+                                        currentAssets = target.assets || []
                                     }
-                                } else {
-                                    currentAssets = target.assets || []
                                 }
                             }
-                        }
 
-                        return currentAssets.map(asset => {
-                            const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
-                            if (!asset.url && !isPrimitiveOcclusion) return null
+                            return currentAssets.map(asset => {
+                                const isPrimitiveOcclusion = asset.type === 'occlusion' && asset.occlusion_shape && asset.occlusion_shape !== 'model';
+                                if (!asset.url && !isPrimitiveOcclusion) return null
 
-                            if (asset.type === 'occlusion') {
-                                return <OcclusionModel key={asset.id} asset={asset} animState={animState} debugMode={debugMode} />
-                            }
+                                if (asset.type === 'occlusion') {
+                                    return <OcclusionModel key={asset.id} asset={asset} animState={animState} debugMode={debugMode} />
+                                }
 
-                            return asset.type === '3d' ? (
-                                <Model key={asset.id} asset={asset} animState={animState} />
-                            ) : asset.type === 'image' ? (
-                                <ImagePlane key={asset.id} asset={asset} animState={animState} />
-                            ) : (
-                                <VideoPlane key={asset.id} asset={asset} animState={animState} />
-                            )
-                        })
-                    })()}
+                                return asset.type === '3d' ? (
+                                    <Model key={asset.id} asset={asset} animState={animState} />
+                                ) : asset.type === 'image' ? (
+                                    <ImagePlane key={asset.id} asset={asset} animState={animState} />
+                                ) : (
+                                    <VideoPlane key={asset.id} asset={asset} animState={animState} />
+                                )
+                            })
+                        })()}
+                    </group>
 
                     {/* Orbit Controls */}
                     <OrbitControls

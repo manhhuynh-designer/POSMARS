@@ -1,4 +1,4 @@
-import { VideoKeyframe } from '@/components/admin/TemplateConfigBuilder'
+import { VideoKeyframe } from '@/components/admin/template-builder/types'
 
 export interface InterpolatedValues {
     position: [number, number, number]

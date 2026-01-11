@@ -133,13 +133,31 @@ export default function EditProjectPage() {
             const diag = errData.diagnostic ? `\nDiagnostic: ${JSON.stringify(errData.diagnostic)}` : ''
             throw new Error(msg + diag)
         }
-        const { url: signedUrl, publicUrl } = await res.json()
+        const { url: signedUrl, publicUrl, token } = await res.json()
 
+        // 1. Upload file to GCS directly
         await fetch(signedUrl, {
             method: 'PUT',
             headers: { 'Content-Type': file.type },
             body: file
         })
+
+        // 2. Finalize upload (set metadata)
+        // We reuse the auth token from the current session
+        const finalizeRes = await fetch('/api/upload/finalize', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ filename: path, token })
+        })
+
+        if (!finalizeRes.ok) {
+            console.warn('Failed to set download token metadata, public link might be unstable')
+        }
+
+        console.log('✅ Upload Finalized. Public URL:', publicUrl)
 
         return publicUrl
     }
@@ -170,7 +188,7 @@ export default function EditProjectPage() {
     const templateName = TEMPLATE_NAMES[project.template] || project.template
 
     return (
-        <div className="max-w-screen-2xl mx-auto px-4">
+        <div className="w-full px-4 transition-all duration-500">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-6">
@@ -230,7 +248,7 @@ export default function EditProjectPage() {
 
             {/* Tab Content */}
             {/* Tab Content */}
-            <div className="bg-[#0c0c0c] rounded-[2.5rem] shadow-2xl p-10 border border-white/5">
+            <div className={`${activeTab === 'template' ? 'bg-transparent border-none p-0 shadow-none' : 'bg-[#0c0c0c] rounded-[2.5rem] shadow-2xl p-10 border border-white/5'} transition-all duration-500`}>
                 {activeTab === 'basic' && (
                     <div className="space-y-10">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -338,13 +356,13 @@ export default function EditProjectPage() {
                                 }
                             }}
                             className={`p-6 rounded-2xl cursor-pointer transition-all duration-300 flex items-center gap-5 ${formData.lead_form_config
-                                    ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
-                                    : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+                                ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
+                                : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
                                 }`}
                         >
                             <div className={`p-3 rounded-xl transition-all ${formData.lead_form_config
-                                    ? 'bg-green-500/20 text-green-400'
-                                    : 'bg-white/10 text-white/30'
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-white/10 text-white/30'
                                 }`}>
                                 {formData.lead_form_config ? <Users size={24} /> : <UserX size={24} />}
                             </div>

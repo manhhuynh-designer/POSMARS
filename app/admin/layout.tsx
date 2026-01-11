@@ -44,7 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="min-h-screen bg-[#0a0a0a]">
             {/* Header */}
             <header className="bg-[#0c0c0c]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div className="px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-6">
                         <Link href="/admin">
                             <img src="/logo-header.png" alt="POSMARS" className="h-8 w-auto px-2" />
@@ -71,7 +71,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </header>
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 py-8">
+            <main className="px-4 py-8">
                 {children}
             </main>
         </div>

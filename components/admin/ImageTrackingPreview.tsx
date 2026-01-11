@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, X, Box, Check, Sparkles, Loader2, RotateCcw } from 'lucide-react'
-import { ImageTrackingConfig, ARAsset, TargetConfig } from './TemplateConfigBuilder'
+import { ImageTrackingConfig, ARAsset, TargetConfig } from './template-builder/types'
 
 interface ImageTrackingPreviewProps {
     markerUrl: string
@@ -211,6 +211,23 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             });
         }
 
+        // Register fix-rotation-order component
+        if (!(window as any).AFRAME.components['fix-rotation-order']) {
+            (window as any).AFRAME.registerComponent('fix-rotation-order', {
+                init: function () {
+                    const el = this.el;
+                    const applyOrder = () => {
+                        if (el.object3D) {
+                            el.object3D.rotation.order = 'XZY';
+                        }
+                    };
+                    applyOrder();
+                    el.addEventListener('loaded', applyOrder);
+                    el.addEventListener('model-loaded', applyOrder);
+                }
+            });
+        }
+
         // Register occlusion-material component only if not already registered
         if (!(window as any).AFRAME.components['occlusion-material']) {
             (window as any).AFRAME.registerComponent('occlusion-material', {
@@ -333,41 +350,66 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         return
                     }
 
-                    // Check if RGBELoader is available
-                    let RGBELoader = THREE.RGBELoader
-                    if (!RGBELoader) {
-                        // Try to load RGBELoader dynamically
-                        console.log('🌅 Admin HDR: Loading RGBELoader...')
+                    // Check extension
+                    const url = config.environment_url!;
+                    const isEXR = url.toLowerCase().includes('.exr');
+                    const loaderName = isEXR ? 'EXRLoader' : 'RGBELoader';
+                    const cdnUrl = isEXR
+                        ? 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/EXRLoader.js'
+                        : 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js';
+
+                    // Check if Loader is available
+                    let EnvLoader = THREE[loaderName]
+                    if (!EnvLoader) {
+                        // Try to load Loader dynamically
+                        console.log(`🌅 Admin HDR: Loading ${loaderName}...`)
                         const script = document.createElement('script')
-                        script.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js'
+                        script.src = cdnUrl
                         await new Promise((resolve, reject) => {
                             script.onload = resolve
                             script.onerror = reject
                             document.head.appendChild(script)
                         })
-                        RGBELoader = THREE.RGBELoader
+                        EnvLoader = THREE[loaderName]
                     }
 
-                    if (!RGBELoader) {
-                        console.warn('⚠️ Admin HDR: RGBELoader not available')
+                    if (!EnvLoader) {
+                        console.warn(`⚠️ Admin HDR: ${loaderName} not available`)
                         return
                     }
 
-                    const loader = new RGBELoader()
-                    loader.load(config.environment_url!, (hdrTexture: any) => {
-                        hdrTexture.mapping = THREE.EquirectangularReflectionMapping
+                    // Diagnostic Fetch
+                    try {
+                        console.log(`🌅 Admin HDR: Fetch Check Start for ${url}`);
+                        const response = await fetch(url, { method: 'HEAD' });
+                        console.log(`🌅 Admin HDR: Fetch Check Status: ${response.status} ${response.statusText}`);
+                        console.log(`🌅 Admin HDR: Content-Type: ${response.headers.get('content-type')}`);
+                        console.log(`🌅 Admin HDR: Content-Length: ${response.headers.get('content-length')}`);
+                    } catch (fetchErr) {
+                        console.error('🌅 Admin HDR: Fetch Check Failed:', fetchErr);
+                    }
+
+                    const loader = new EnvLoader()
+                    loader.setCrossOrigin('anonymous')
+                    // For EXR, we might need to set data type if not default
+                    if (isEXR) {
+                        loader.setDataType(THREE.FloatType); // Often required for EXR in WebGL 1/2 compatibility
+                    }
+
+                    loader.load(url, (texture: any) => {
+                        texture.mapping = THREE.EquirectangularReflectionMapping
 
                         // Get the Three.js scene from A-Frame
                         const threeScene = (scene as any).object3D
                         if (threeScene) {
                             // Set environment for IBL (lighting/reflections)
-                            threeScene.environment = hdrTexture
+                            threeScene.environment = texture
                             // Keep background null for AR (camera feed visible)
                             threeScene.background = null
-                            console.log('✅ Admin HDR: Environment map applied for IBL')
+                            console.log(`✅ Admin HDR: ${isEXR ? 'EXR' : 'HDR'} Environment map applied for IBL`)
                         }
                     }, undefined, (error: any) => {
-                        console.error('❌ Admin HDR: Failed to load environment map:', error)
+                        console.error(`❌ Admin HDR: Failed to load ${isEXR ? 'EXR' : 'HDR'} map:`, error)
                     })
                 } catch (error) {
                     console.error('❌ Admin HDR: Error setting up environment map:', error)
@@ -424,6 +466,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     el.setAttribute('width', (asset.video_width ?? 1).toString())
                     el.setAttribute('height', (asset.video_height ?? 0.5625).toString())
                     el.setAttribute('material', `shader: flat; src: #${videoId}; transparent: true`)
+                    el.setAttribute('fix-rotation-order', '')
 
                     // Video Keyframes (Option B) for Preview
                     if (asset.keyframes && asset.keyframes.length > 0) {
@@ -489,6 +532,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     el.setAttribute('height', (asset.image_height ?? 1).toString())
                     // Use flat shader with alpha transparency
                     el.setAttribute('material', 'shader: flat; transparent: true; alphaTest: 0.5')
+                    el.setAttribute('fix-rotation-order', '')
 
                     // Image Keyframes (Option B) for Preview
                     if (asset.keyframes && asset.keyframes.length > 0) {
@@ -544,11 +588,13 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         }
 
                         el.setAttribute('occlusion-material', 'debug: false')
+                        el.setAttribute('fix-rotation-order', '')
                     }
                     // Handle GLTF Models (3D Models & Occlusion Custom Models)
                     else {
                         el = document.createElement('a-gltf-model')
                         el.setAttribute('src', asset.url)
+                        el.setAttribute('fix-rotation-order', '')
 
                         if (asset.type === 'occlusion') {
                             el.setAttribute('occlusion-material', 'debug: false')

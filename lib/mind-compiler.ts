@@ -46,7 +46,7 @@ export const compileFiles = async (files: File[], onProgress: (progress: number)
     // 5. Export
     console.log('[MindAR] Compilation complete. Exporting data...');
     const buffer = await compiler.exportData();
-    return new Blob([buffer]);
+    return new Blob([buffer as any]);
 };
 
 const loadCompilerScript = (): Promise<void> => {

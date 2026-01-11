@@ -15,8 +15,11 @@ interface ProMixerTimelineProps {
     onKeyframeUpdate: (id: string, updates: Partial<VideoKeyframe>) => void
     onKeyframeSelect: (ids: string[]) => void
     onAddKeyframe: (property: string, time: number) => void
+    onKeyframesDelete?: (ids: string[]) => void
     selectedIds: string[]
     zoom?: number
+    playbackState?: { isPlaying: boolean; currentTime: number; startTimestamp: number }
+    onSeek?: (time: number) => void
 }
 
 const TRACK_HEIGHT = 50
@@ -37,8 +40,11 @@ export default function ProMixerTimeline({
     onKeyframeUpdate,
     onKeyframeSelect,
     onAddKeyframe,
+    onKeyframesDelete,
     selectedIds,
-    zoom = 100
+    zoom = 100,
+    playbackState = { isPlaying: false, currentTime: 0, startTimestamp: 0 },
+    onSeek
 }: ProMixerTimelineProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
@@ -53,6 +59,32 @@ export default function ProMixerTimeline({
         // Add keyframe at playhead position
         onAddKeyframe(property, currentTime)
     }
+
+    // External Playhead Sync
+    useEffect(() => {
+        if (!playbackState.isPlaying) {
+            setCurrentTime(playbackState.currentTime)
+        }
+    }, [playbackState.isPlaying, playbackState.currentTime])
+
+    // Local Playback Loop for smooth playhead
+    useEffect(() => {
+        if (!playbackState.isPlaying) return
+
+        let animFrame: number
+        const startTs = playbackState.startTimestamp
+        const baseTime = playbackState.currentTime
+
+        const loop = () => {
+            const elapsed = (performance.now() - startTs) / 1000
+            const nextTime = (baseTime + elapsed) % Math.max(0.1, duration)
+            setCurrentTime(nextTime)
+            animFrame = requestAnimationFrame(loop)
+        }
+
+        animFrame = requestAnimationFrame(loop)
+        return () => cancelAnimationFrame(animFrame)
+    }, [playbackState.isPlaying, playbackState.startTimestamp, playbackState.currentTime, duration])
 
     const timeToX = useCallback((time: number) => {
         return HEADER_WIDTH + time * zoom
@@ -202,6 +234,17 @@ export default function ProMixerTimeline({
         drawTimeline()
     }, [drawTimeline])
 
+    // Keyboard support for deletion
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (selectedIds.length > 0 && (e.key === 'Delete' || e.key === 'Backspace')) {
+                onKeyframesDelete?.(selectedIds)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [selectedIds, onKeyframesDelete])
+
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current
         if (!canvas) return
@@ -212,8 +255,9 @@ export default function ProMixerTimeline({
 
         // Click on ruler sets playhead position
         if (y < RULER_HEIGHT) {
-            const time = xToTime(x)
-            setCurrentTime(Math.max(0, Math.min(duration, Math.round(time * 10) / 10)))
+            const time = Math.max(0, Math.min(duration, Math.round(xToTime(x) * 10) / 10))
+            setCurrentTime(time)
+            onSeek?.(time)
             return
         }
 
@@ -283,6 +327,7 @@ export default function ProMixerTimeline({
 
         const rect = canvas.getBoundingClientRect()
         const x = e.clientX - rect.left
+        const y = e.clientY - rect.top
 
         const time = xToTime(x)
         setHoverTime(time)
@@ -290,6 +335,14 @@ export default function ProMixerTimeline({
         if (draggingKf) {
             const snappedTime = Math.round(time * 10) / 10
             onKeyframeUpdate(draggingKf, { time: snappedTime })
+        } else if (e.buttons === 1) { // Left mouse button held
+            // If dragging on ruler or near playhead
+            if (y < RULER_HEIGHT || Math.abs(time - currentTime) < 0.2) {
+                const snappedTime = Math.round(time * 10) / 10
+                const finalTime = Math.max(0, Math.min(duration, snappedTime))
+                setCurrentTime(finalTime)
+                onSeek?.(finalTime)
+            }
         }
     }
 
