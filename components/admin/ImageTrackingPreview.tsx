@@ -393,10 +393,32 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                     loader.setCrossOrigin('anonymous')
                     // For EXR, we might need to set data type if not default
                     if (isEXR) {
-                        loader.setDataType(THREE.FloatType); // Often required for EXR in WebGL 1/2 compatibility
+                        try {
+                            loader.setDataType(THREE.HalfFloatType);
+                        } catch (e) {
+                            loader.setDataType(THREE.FloatType);
+                        }
                     }
 
                     loader.load(url, (texture: any) => {
+                        try {
+                            // Sync Tone Mapping with Client AR
+                            const renderer = (scene as any).renderer;
+                            if (renderer) {
+                                const tmMap: Record<string, any> = {
+                                    'acesfilmic': THREE.ACESFilmicToneMapping,
+                                    'linear': THREE.LinearToneMapping,
+                                    'reinhard': THREE.ReinhardToneMapping,
+                                    'no': THREE.NoToneMapping
+                                };
+                                const tmMode = tmMap[config.tone_mapping || 'acesfilmic'] || THREE.ACESFilmicToneMapping;
+
+                                renderer.toneMapping = tmMode;
+                                renderer.toneMappingExposure = config.exposure ?? 1.0;
+                                renderer.outputEncoding = THREE.sRGBEncoding;
+                            }
+                        } catch (e) { console.warn('Admin HDR: Tone mapping error', e); }
+
                         texture.mapping = THREE.EquirectangularReflectionMapping
 
                         // Get the Three.js scene from A-Frame

@@ -476,17 +476,43 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     // For EXR, we might need to set data type if not default
                     if (isEXR) {
                         try {
-                            // Try FloatType first (standard for desktop/high-end mobile)
-                            // But for broad mobile support, sometimes HalfFloatType is safer if the device supports it
-                            // However, THREE.FloatType is the safe default for EXRLoader in newer Three versions
-                            loader.setDataType(THREE.FloatType);
+                            // Mobile Optimization: HalfFloatType is sufficient for lighting and saves 50% memory/bandwidth
+                            // It is also more compatible with mobile WebGL implementations
+                            loader.setDataType(THREE.HalfFloatType);
                         } catch (e) {
-                            console.warn('⚠️ HDR: Failed to set FloatType, ignoring:', e);
+                            console.warn('⚠️ HDR: Failed to set HalfFloatType, falling back to FloatType:', e);
+                            try { loader.setDataType(THREE.FloatType); } catch (e2) { }
                         }
                     }
 
                     loader.load(url, (texture: any) => {
-                        texture.mapping = THREE.EquirectangularReflectionMapping;
+                        try {
+                            // High Dynamic Range (HDR) Tone Mapping
+                            // Essential for mobile to map EXR values to screen range
+                            const renderer = (scene as any).renderer;
+                            if (renderer) {
+                                // Map string config to THREE constants
+                                const tmMap: Record<string, any> = {
+                                    'acesfilmic': THREE.ACESFilmicToneMapping,
+                                    'linear': THREE.LinearToneMapping,
+                                    'reinhard': THREE.ReinhardToneMapping,
+                                    'no': THREE.NoToneMapping
+                                };
+                                const tmMode = tmMap[config.tone_mapping || 'acesfilmic'] || THREE.ACESFilmicToneMapping;
+
+                                renderer.toneMapping = tmMode;
+                                renderer.toneMappingExposure = config.exposure ?? 1.0;
+
+                                renderer.outputEncoding = THREE.sRGBEncoding;
+                                console.log(`💡 HDR: Tone Mapping (${config.tone_mapping || 'acesfilmic'}) & Exposure (${config.exposure ?? 1.0}) configured`);
+                            }
+                        } catch (tmErr) {
+                            console.warn('⚠️ HDR: Failed to set Tone Mapping:', tmErr);
+                        }
+
+                        // Ensure texture is LinearEncoding before PMREM
+                        texture.encoding = THREE.LinearEncoding;
+                        texture.mapping = THREE.EquirectangularReflectionMapping;;
 
                         // Mobile Compatibility: Use PMREMGenerator for better lighting
                         const threeScene = (scene as any).object3D;
