@@ -475,20 +475,49 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                     loader.setCrossOrigin('anonymous')
                     // For EXR, we might need to set data type if not default
                     if (isEXR) {
-                        loader.setDataType(THREE.FloatType); // Often required for EXR
+                        try {
+                            // Try FloatType first (standard for desktop/high-end mobile)
+                            // But for broad mobile support, sometimes HalfFloatType is safer if the device supports it
+                            // However, THREE.FloatType is the safe default for EXRLoader in newer Three versions
+                            loader.setDataType(THREE.FloatType);
+                        } catch (e) {
+                            console.warn('⚠️ HDR: Failed to set FloatType, ignoring:', e);
+                        }
                     }
 
                     loader.load(url, (texture: any) => {
-                        texture.mapping = THREE.EquirectangularReflectionMapping
+                        texture.mapping = THREE.EquirectangularReflectionMapping;
 
-                        // Get the Three.js scene from A-Frame
-                        const threeScene = (scene as any).object3D
+                        // Mobile Compatibility: Use PMREMGenerator for better lighting
+                        const threeScene = (scene as any).object3D;
+
                         if (threeScene) {
-                            // Set environment for IBL (lighting/reflections)
-                            threeScene.environment = texture
-                            // Keep background null for AR (camera feed visible)
-                            threeScene.background = null
-                            console.log(`✅ HDR: ${isEXR ? 'EXR' : 'HDR'} Environment map applied for IBL`)
+                            try {
+                                const renderer = (scene as any).renderer;
+                                if (renderer) {
+                                    console.log('🌅 HDR: Generating PMREM...');
+                                    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+                                    pmremGenerator.compileEquirectangularShader();
+
+                                    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+                                    threeScene.environment = envMap;
+
+                                    // Clean up original texture to save memory
+                                    texture.dispose();
+                                    pmremGenerator.dispose();
+                                } else {
+                                    // Fallback if renderer not ready
+                                    threeScene.environment = texture;
+                                }
+
+                                // Keep background null for AR (camera feed visible)
+                                threeScene.background = null;
+                                console.log(`✅ HDR: ${isEXR ? 'EXR' : 'HDR'} Environment map applied (PMREM: ${!!renderer})`);
+                            } catch (pmremErr) {
+                                console.error('❌ HDR: PMREM processing failed, falling back to texture:', pmremErr);
+                                threeScene.environment = texture;
+                                threeScene.background = null;
+                            }
                         }
                     }, undefined, (error: any) => {
                         console.error(`❌ HDR: Failed to load ${isEXR ? 'EXR' : 'HDR'} map:`, error)
