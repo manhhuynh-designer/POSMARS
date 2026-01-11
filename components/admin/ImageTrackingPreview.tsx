@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Camera, X, Box, Check, Sparkles, Loader2, RotateCcw } from 'lucide-react'
 import { ImageTrackingConfig, ARAsset, TargetConfig } from './template-builder/types'
 
@@ -13,6 +13,18 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
     const containerRef = useRef<HTMLDivElement>(null)
     const sceneRef = useRef<any>(null)
     const entityRefs = useRef<{ [key: string]: HTMLElement }>({})
+
+    // Stable key for asset structure - only changes when assets actually change
+    // Use JSON.stringify to compare by value, not by reference
+    const assetStructureKeyJson = JSON.stringify({
+        targets: (config.targets || []).map(t => ({ idx: t.targetIndex, assets: (t.assets || []).map(a => ({ id: a.id, url: a.url })) })),
+        assets: (config.assets || []).map(a => ({ id: a.id, url: a.url })),
+        defaults: (config.default_assets || []).map(a => ({ id: a.id, url: a.url }))
+    });
+
+    const assetStructureKey = useMemo(() => {
+        return assetStructureKeyJson;
+    }, [assetStructureKeyJson]);
     const observerRef = useRef<MutationObserver | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -114,7 +126,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         }
     }, [])
 
-    // Soft Updates for config changes (Real-time tweaks)
+    // Soft Updates for LIGHTING ONLY (Real-time tweaks without resetting transforms)
     useEffect(() => {
         if (!sceneRef.current) return
 
@@ -125,7 +137,7 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
         const directional = sceneRef.current.querySelector('a-light[type="directional"]')
         if (directional) directional.setAttribute('intensity', (config.directional_intensity ?? 1).toString())
 
-        // 2. Update Renderer settings
+        // 2. Update Renderer settings (Tone Mapping, Exposure)
         sceneRef.current.setAttribute('renderer', {
             colorManagement: true,
             physicallyCorrectLights: true,
@@ -133,58 +145,18 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             toneMapping: config.tone_mapping ?? 'acesfilmic'
         })
 
-        // 3. Update Assets Transform (Multi-Target Aware)
-        const targetsToUpdate = (() => {
-            if (config.targets && config.targets.length > 0) return config.targets;
-            if (config.assets && config.assets.length > 0) return [{ targetIndex: 0, assets: config.assets, name: 'Default' }];
-            return [];
-        })();
+        // NOTE: Asset transform updates are handled by initAR (on asset structure change)
+        // and by keyframe animations. We do NOT update transforms here to prevent
+        // resetting positions when only lighting settings are changed.
 
-        targetsToUpdate.forEach(target => {
-            // Resolve assets similar to initAR
-            let assetsToCheck = target.assets && target.assets.length > 0 ? target.assets : [];
-
-            // Inheritance
-            if (assetsToCheck.length === 0 && target.extends !== undefined) {
-                const parent = config.targets?.find(t => t.targetIndex === target.extends);
-                if (parent && parent.assets && parent.assets.length > 0) {
-                    assetsToCheck = parent.assets;
-                }
-            }
-
-            // Global Defaults
-            if (assetsToCheck.length === 0) {
-                assetsToCheck = config.default_assets || [];
-            }
-
-            assetsToCheck.forEach(asset => {
-                const assetEntityId = `${asset.id}-${target.targetIndex}`;
-                const el = entityRefs.current[assetEntityId];
-
-                if (el) {
-                    el.setAttribute('position', `${asset.position[0]} ${asset.position[1]} ${asset.position[2]}`);
-                    el.setAttribute('rotation', `${asset.rotation[0]} ${asset.rotation[1]} ${asset.rotation[2]}`);
-                    el.setAttribute('scale', `${asset.scale} ${asset.scale} ${asset.scale}`);
-
-                    if (asset.type === 'video') {
-                        el.setAttribute('width', (asset.video_width ?? 1).toString());
-                        el.setAttribute('height', (asset.video_height ?? 0.5625).toString());
-                    } else if (asset.type === 'image') {
-                        el.setAttribute('width', (asset.image_width ?? 1).toString());
-                        el.setAttribute('height', (asset.image_height ?? 1).toString());
-                    }
-                }
-            });
-        });
-
-    }, [config])
+    }, [config.ambient_intensity, config.directional_intensity, config.exposure, config.tone_mapping])
 
     // Re-initialize scene when assets list or marker changes (Hard update)
     useEffect(() => {
         if (!loading && containerRef.current) {
             initAR()
         }
-    }, [markerUrl, config.assets?.length, facingMode])
+    }, [markerUrl, assetStructureKey, facingMode])
 
     const initAR = () => {
         if (!containerRef.current) return
@@ -618,11 +590,15 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         el.setAttribute('src', asset.url)
                         el.setAttribute('fix-rotation-order', '')
 
+                        // GLB Embedded Animation Support (Sync with Client AR)
+                        if (asset.type !== 'occlusion') {
+                            const loopMode = asset.loop_animation !== false ? 'repeat' : 'once';
+                            el.setAttribute('animation-mixer', `loop: ${loopMode}; timeScale: 1`);
+                            el.setAttribute('model-opacity', '1');
+                        }
+
                         if (asset.type === 'occlusion') {
                             el.setAttribute('occlusion-material', 'debug: false')
-                        } else {
-                            // Initialize opacity for normal 3D models only
-                            el.setAttribute('model-opacity', '1')
                         }
                     }
 

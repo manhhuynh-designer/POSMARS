@@ -1,6 +1,6 @@
 'use client'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, useGLTF, Grid, useVideoTexture, useTexture, Html, Environment } from '@react-three/drei'
+import { OrbitControls, useGLTF, useAnimations, Grid, useVideoTexture, useTexture, Html, Environment } from '@react-three/drei'
 import { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { Box, Loader2, Move, RotateCcw, Play, Pause } from 'lucide-react'
@@ -165,10 +165,13 @@ function OcclusionModel({ asset, animState, debugMode }: { asset: ARAsset; animS
     )
 }
 
-// GLTF Model Component with keyframe animation
+// GLTF Model Component with keyframe animation + embedded GLB animations
 function Model({ asset, animState }: { asset: ARAsset; animState: AnimationState }) {
-    const { scene } = useGLTF(asset.url)
+    const { scene, animations } = useGLTF(asset.url)
     const ref = useRef<THREE.Group>(null)
+
+    // GLB Embedded Animation Support
+    const { actions, names } = useAnimations(animations, ref)
 
     const duration = asset.animation_duration || getKeyframeDuration(asset.keyframes || []) || 5
     const keyframes = asset.keyframes || []
@@ -241,6 +244,33 @@ function Model({ asset, animState }: { asset: ARAsset; animState: AnimationState
             ref.current.scale.set(asset.scale, asset.scale, asset.scale)
         }
     }, [asset.position, asset.rotation, asset.scale, keyframes.length])
+
+    // Auto-play embedded GLB animations & sync with timeline play/pause
+    useEffect(() => {
+        if (names.length > 0 && actions) {
+            names.forEach(name => {
+                const action = actions[name];
+                if (action) {
+                    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+                    action.clampWhenFinished = !loop;
+
+                    if (animState.isPlaying) {
+                        if (action.paused) {
+                            action.paused = false;
+                        } else if (!action.isRunning()) {
+                            action.reset().play();
+                        }
+                    } else {
+                        action.paused = true;
+                    }
+                }
+            });
+        }
+        return () => {
+            // Cleanup: stop all animations when component unmounts
+            names.forEach(name => actions[name]?.stop());
+        };
+    }, [actions, names, loop, animState.isPlaying]);
 
     return <primitive object={scene} ref={ref} />
 }

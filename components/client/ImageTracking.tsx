@@ -637,6 +637,15 @@ export default function ImageTracking({ markerUrl, modelUrl, config, onComplete,
                         model = document.createElement('a-gltf-model');
                         model.setAttribute('src', asset.url)
 
+                        // GLB Embedded Animation Support
+                        // Play all embedded animation clips when target is found
+                        // animation-mixer from aframe-extras handles skeletal/morph animations
+                        if (asset.type !== 'occlusion') {
+                            // Loop mode based on asset setting (default: loop)
+                            const loopMode = asset.loop_animation !== false ? 'repeat' : 'once';
+                            model.setAttribute('animation-mixer', `loop: ${loopMode}; timeScale: 1`);
+                        }
+
                         if (asset.type === 'occlusion') {
                             model.setAttribute('occlusion-material', 'debug: false');
                         }
