@@ -11,9 +11,10 @@ interface TemplateConfigBuilderProps {
     initialConfig: any
     onChange: (config: any) => void
     onUpload: (file: File, path: string) => Promise<string>
+    availableLocations?: any[]
 }
 
-export default function TemplateConfigBuilder({ template, initialConfig, onChange, onUpload }: TemplateConfigBuilderProps) {
+export default function TemplateConfigBuilder({ template, initialConfig, onChange, onUpload, availableLocations }: TemplateConfigBuilderProps) {
 
     // Render based on template type
     switch (template) {
@@ -24,6 +25,7 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                     initialConfig={initialConfig}
                     onChange={onChange}
                     onUpload={onUpload}
+                    availableLocations={availableLocations}
                 />
             )
 

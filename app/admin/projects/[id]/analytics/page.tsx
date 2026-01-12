@@ -105,6 +105,7 @@ export default function AnalyticsPage() {
             { header: 'Họ tên', key: 'name', width: 25 },
             { header: 'SĐT', key: 'phone', width: 15 },
             { header: 'Email', key: 'email', width: 25 },
+            { header: 'Giải thưởng', key: 'prize', width: 25 },
             { header: 'POS ID', key: 'pos_id', width: 15 },
             { header: 'Địa điểm', key: 'location', width: 25 },
             { header: 'Thời gian', key: 'created_at', width: 20 }
@@ -112,11 +113,14 @@ export default function AnalyticsPage() {
 
         // Data
         leads.forEach((lead, i) => {
+            // Extract prize name from game_result
+            const prizeName = lead.game_result?.prize?.name || lead.game_result?.voucher?.label || lead.game_result?.prize || ''
             sheet.addRow({
                 index: i + 1,
                 name: lead.user_data?.name || '',
                 phone: lead.user_data?.phone || '',
                 email: lead.user_data?.email || '',
+                prize: prizeName,
                 pos_id: lead.pos_id || '',
                 location: lead.location_name || '',
                 created_at: new Date(lead.created_at).toLocaleString('vi-VN')
@@ -236,25 +240,37 @@ export default function AnalyticsPage() {
                                 <tr>
                                     <th className="px-8 py-5">Họ tên</th>
                                     <th className="px-8 py-5">SĐT</th>
+                                    <th className="px-8 py-5">Giải thưởng</th>
                                     <th className="px-8 py-5">POS ID</th>
                                     <th className="px-8 py-5">Thời gian</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {leads.slice(0, 20).map(lead => (
-                                    <tr key={lead.id} className="hover:bg-white/5 transition-colors group">
-                                        <td className="px-8 py-5">
-                                            <p className="font-black text-sm uppercase tracking-tighter text-white group-hover:text-orange-500 transition-colors">{lead.user_data?.name || '-'}</p>
-                                        </td>
-                                        <td className="px-8 py-5 font-mono text-xs text-white/60">{lead.user_data?.phone || '-'}</td>
-                                        <td className="px-8 py-5">
-                                            <span className="px-3 py-1 bg-white/5 rounded-lg text-[10px] font-black border border-white/10 uppercase tracking-widest">{lead.pos_id || '-'}</span>
-                                        </td>
-                                        <td className="px-8 py-5 text-[10px] font-medium text-white/40 uppercase tracking-wider">
-                                            {new Date(lead.created_at).toLocaleString('vi-VN')}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {leads.slice(0, 20).map(lead => {
+                                    // Extract prize name from game_result
+                                    const prizeName = lead.game_result?.prize?.name || lead.game_result?.voucher?.label || lead.game_result?.prize || ''
+                                    return (
+                                        <tr key={lead.id} className="hover:bg-white/5 transition-colors group">
+                                            <td className="px-8 py-5">
+                                                <p className="font-black text-sm uppercase tracking-tighter text-white group-hover:text-orange-500 transition-colors">{lead.user_data?.name || '-'}</p>
+                                            </td>
+                                            <td className="px-8 py-5 font-mono text-xs text-white/60">{lead.user_data?.phone || '-'}</td>
+                                            <td className="px-8 py-5">
+                                                {prizeName ? (
+                                                    <span className="px-3 py-1 bg-orange-500/10 text-orange-500 rounded-lg text-[10px] font-black border border-orange-500/20 uppercase tracking-widest">{prizeName}</span>
+                                                ) : (
+                                                    <span className="text-white/20">-</span>
+                                                )}
+                                            </td>
+                                            <td className="px-8 py-5">
+                                                <span className="px-3 py-1 bg-white/5 rounded-lg text-[10px] font-black border border-white/10 uppercase tracking-widest">{lead.pos_id || '-'}</span>
+                                            </td>
+                                            <td className="px-8 py-5 text-[10px] font-medium text-white/40 uppercase tracking-wider">
+                                                {new Date(lead.created_at).toLocaleString('vi-VN')}
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
                                 {leads.length === 0 && (
                                     <tr><td colSpan={4} className="px-8 py-20 text-center">
                                         <div className="flex flex-col items-center gap-4 grayscale opacity-20">

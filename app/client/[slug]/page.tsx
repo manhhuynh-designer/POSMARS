@@ -19,7 +19,7 @@ export default function ClientPage() {
     const slug = params.slug as string
 
     // POS tracking from URL params
-    const posId = searchParams.get('pos_id') || ''
+    const posId = searchParams.get('pos') || searchParams.get('pos_id') || ''
     const locationName = searchParams.get('loc') || ''
 
     const [loading, setLoading] = useState(true)
@@ -27,6 +27,8 @@ export default function ClientPage() {
     const [step, setStep] = useState<Step>('lead_form')
     const [leadId, setLeadId] = useState<number | null>(null)
     const [result, setResult] = useState<any>(null)
+    const [userData, setUserData] = useState<Record<string, any>>({})
+    const [currentPlays, setCurrentPlays] = useState(0)
 
     useEffect(() => {
         loadProject()
@@ -126,8 +128,9 @@ export default function ClientPage() {
     // Track experience start time
     const [experienceStartTime, setExperienceStartTime] = useState<number | null>(null)
 
-    const handleLeadComplete = (id: number) => {
+    const handleLeadComplete = (id: number, data: Record<string, any>) => {
         setLeadId(id)
+        setUserData(data)
         setStep('interaction')
         setExperienceStartTime(Date.now()) // Start timing
 
@@ -141,6 +144,10 @@ export default function ClientPage() {
     }
 
     const handleInteractionComplete = async (resultData?: any) => {
+        // Increment play count locally
+        const newPlayCount = currentPlays + 1
+        setCurrentPlays(newPlayCount)
+
         // Calculate experience duration
         const duration = experienceStartTime
             ? Math.round((Date.now() - experienceStartTime) / 1000)
@@ -175,11 +182,22 @@ export default function ClientPage() {
         })
 
         // Save result securely via RPC
-        if (leadId && resultData) {
-            await supabase.rpc('update_lead_result', {
-                p_lead_id: leadId,
-                p_result: resultData
-            })
+        if (leadId) {
+            // Update result
+            if (resultData) {
+                await supabase.rpc('update_lead_result', {
+                    p_lead_id: leadId,
+                    p_result: resultData
+                })
+            }
+
+            // Update play count in user_data
+            const updatedUserData = { ...userData, play_count: newPlayCount }
+            setUserData(updatedUserData)
+
+            await supabase.from('leads')
+                .update({ user_data: updatedUserData })
+                .eq('id', leadId)
         }
         setResult(resultData)
         setStep('result')
@@ -194,13 +212,21 @@ export default function ClientPage() {
     }
 
     const handleRestart = () => {
-        // Check if lead form is enabled for restart logic
-        const hasLeadForm = project?.lead_form_config &&
-            project.lead_form_config.fields &&
-            project.lead_form_config.fields.length > 0
+        // Check play limit
+        const maxPlays = project.template_config?.max_plays || 1
 
-        setStep(hasLeadForm ? 'lead_form' : 'interaction')
-        setExperienceStartTime(null) // Reset timer
+        if (currentPlays >= maxPlays) {
+            // Limit reached: Return to Lead Form for new session
+            setLeadId(null)
+            setUserData({})
+            setCurrentPlays(0)
+            setStep('lead_form')
+        } else {
+            // Replay allowed: Return to interaction
+            setStep('interaction')
+        }
+
+        setExperienceStartTime(null)
         setResult(null)
     }
 
@@ -297,7 +323,10 @@ export default function ClientPage() {
                             {template === 'lucky_draw' && (
                                 <LuckyDraw
                                     config={template_config || { prizes: [] }}
+                                    posId={posId}
                                     onComplete={(prize) => handleInteractionComplete({ prize })}
+                                    maxPlays={template_config?.max_plays || 1}
+                                    currentPlays={currentPlays}
                                 />
                             )}
 
@@ -320,6 +349,9 @@ export default function ClientPage() {
                     template={template}
                     result={result}
                     config={template_config?.result_config}
+                    gameConfig={template === 'lucky_draw' ? template_config : undefined}
+                    userData={userData}
+                    leadId={leadId}
                     onRestart={handleRestart}
                 />
             )}

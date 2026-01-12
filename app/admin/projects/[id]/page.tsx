@@ -422,6 +422,7 @@ export default function EditProjectPage() {
                                 ...formData,
                                 template_config: { ...formData.template_config, result_config: config }
                             })}
+                            onUpload={async (file) => await uploadFile(file, `vouchers/${project.client_slug}/${Date.now()}_${file.name}`)}
                         />
                     </div>
                 )}
@@ -474,6 +475,7 @@ export default function EditProjectPage() {
                                     initialConfig={formData.template_config}
                                     onChange={config => setFormData({ ...formData, template_config: config })}
                                     onUpload={async (file, path) => await uploadFile(file, path)}
+                                    availableLocations={formData.locations}
                                 />
                                 {/* Fallback JSON for debugging/other templates without builder */}
                                 {!['lucky_draw', 'ar_checkin', 'face_filter', 'image_tracking'].includes(project.template) && (

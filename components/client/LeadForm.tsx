@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
+import { X } from 'lucide-react'
 
 interface FormField {
     id: string
@@ -26,22 +27,32 @@ interface LeadFormConfig {
     logo_url?: string
     banner_url?: string
     primary_color?: string
-    background_color?: string
     text_color?: string
+
+    // Background Customization
+    bg_type?: 'image' | 'solid' | 'gradient'
+    background_color?: string
+    bg_url?: string
+    bg_gradient_start?: string
+    bg_gradient_end?: string
+
+    // Privacy
+    privacy_policy_content?: string
 }
 
 interface LeadFormProps {
     projectId: string
     config: LeadFormConfig
-    onComplete: (leadId: number) => void
+    onComplete: (leadId: number, userData: Record<string, any>) => void
 }
 
 export default function LeadForm({ projectId, config, onComplete }: LeadFormProps) {
     const searchParams = useSearchParams()
-    const [formData, setFormData] = useState<Record<string, string>>({})
+    const [formData, setFormData] = useState<Record<string, any>>({})
     const [consent, setConsent] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
+    const [showPrivacy, setShowPrivacy] = useState(false)
 
     const posId = searchParams.get('pos_id') || ''
     const locationName = searchParams.get('loc') || ''
@@ -123,24 +134,41 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
         if (err) {
             setError('Có lỗi xảy ra, vui lòng thử lại')
         } else {
-            onComplete(data)
+            onComplete(data, formData)
         }
     }
 
     // Dynamic styles from config
     const primaryColor = config.primary_color || '#f97316'
-    const backgroundColor = config.background_color || '#ffffff'
     const textColor = config.text_color || '#1f2937'
+
+    const getBackgroundStyle = () => {
+        const bgType = config.bg_type || 'solid'
+        if (bgType === 'solid') {
+            return { backgroundColor: config.background_color || '#ffffff' }
+        } else if (bgType === 'gradient') {
+            return { background: `linear-gradient(to bottom, ${config.bg_gradient_start || '#ffffff'}, ${config.bg_gradient_end || '#f3f4f6'})` }
+        }
+        return { backgroundColor: '#f8fafc' }
+    }
 
     return (
         <div
-            className="min-h-screen flex items-center justify-center p-4"
-            style={{ backgroundColor }}
+            className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+            style={getBackgroundStyle()}
         >
+            {/* Background Image */}
+            {config.bg_type === 'image' && config.bg_url && (
+                <div
+                    className="absolute inset-0 z-0 bg-cover bg-center pointer-events-none"
+                    style={{ backgroundImage: `url(${config.bg_url})` }}
+                />
+            )}
+
             <form
                 onSubmit={handleSubmit}
-                className="w-full max-w-md rounded-2xl shadow-xl p-6 space-y-4"
-                style={{ backgroundColor, color: textColor }}
+                className="w-full max-w-md rounded-2xl shadow-xl p-6 space-y-4 relative z-10 bg-white/95 backdrop-blur-sm"
+                style={{ color: textColor }}
             >
                 {/* Banner */}
                 {config.banner_url && (
@@ -207,7 +235,18 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
                         className="mt-1 w-4 h-4"
                         style={{ accentColor: primaryColor }}
                     />
-                    <label htmlFor="consent" className="text-sm opacity-80">{config.consent_text}</label>
+                    <label
+                        htmlFor="consent"
+                        className="text-sm opacity-80 cursor-pointer hover:underline"
+                        onClick={(e) => {
+                            if (config.privacy_policy_content) {
+                                e.preventDefault()
+                                setShowPrivacy(true)
+                            }
+                        }}
+                    >
+                        {config.consent_text}
+                    </label>
                 </div>
 
                 <button
@@ -219,6 +258,40 @@ export default function LeadForm({ projectId, config, onComplete }: LeadFormProp
                     {loading ? 'Đang gửi...' : config.submit_text}
                 </button>
             </form>
+
+            {/* Privacy Policy Modal */}
+            {showPrivacy && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-4 border-b flex items-center justify-between">
+                            <h3 className="font-bold text-lg text-gray-900">Điều khoản & Chính sách</h3>
+                            <button
+                                onClick={() => setShowPrivacy(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X size={20} className="text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap">
+                                {config.privacy_policy_content || 'Chưa có nội dung điều khoản.'}
+                            </div>
+                        </div>
+                        <div className="p-4 border-t bg-gray-50 rounded-b-2xl flex justify-end">
+                            <button
+                                onClick={() => {
+                                    setConsent(true)
+                                    setShowPrivacy(false)
+                                }}
+                                className="px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all hover:opacity-90"
+                                style={{ backgroundColor: primaryColor }}
+                            >
+                                Tôi đồng ý
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -1,3 +1,5 @@
+'use client'
+import { useState } from 'react'
 import { Trash2, ImageIcon, Upload } from 'lucide-react'
 import { Prize } from '../types'
 import FileUploader from '../shared/FileUploader'
@@ -12,14 +14,19 @@ interface PrizeItemProps {
 }
 
 export default function PrizeItem({ prize, index, onUpdate, onRemove, onUpload }: PrizeItemProps) {
+    const [isUploading, setIsUploading] = useState(false)
+
     const handleImageUpload = async (file: File) => {
         try {
+            setIsUploading(true)
             const url = await onUpload(file, `prizes/${Date.now()}_${file.name}`)
             onUpdate(index, { image: url })
             return url
         } catch (error) {
             console.error(error)
             return null
+        } finally {
+            setIsUploading(false)
         }
     }
 
@@ -30,6 +37,7 @@ export default function PrizeItem({ prize, index, onUpdate, onRemove, onUpload }
                 <div className="relative w-28 h-28 rounded-3xl bg-black border border-white/5 flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-transform shadow-inner">
                     <FileUploader
                         onUpload={handleImageUpload}
+                        isUploading={isUploading}
                         className="w-full h-full absolute inset-0 z-10 opacity-0 hover:opacity-100 transition-all bg-orange-500/60 flex items-center justify-center cursor-pointer backdrop-blur-sm"
                     >
                         <div className="w-full h-full flex flex-col items-center justify-center text-white font-black text-[10px] uppercase tracking-widest gap-2">

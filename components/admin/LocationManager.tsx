@@ -49,9 +49,15 @@ export default function LocationManager({ clientSlug, locations, onChange }: Loc
     const generateLink = (loc: Location) => {
         if (!loc.code) return baseUrl
         const params = new URLSearchParams()
-        params.set('pos_id', loc.code)
-        if (loc.name) params.set('location', loc.name)
+        params.set('pos', loc.code) // Changed from 'pos_id' to 'pos' to match client logic
         return `${baseUrl}?${params.toString()}`
+    }
+
+    const generateLocalLink = (loc: Location) => {
+        if (!loc.code) return '#'
+        const params = new URLSearchParams()
+        params.set('pos', loc.code)
+        return `/client/${clientSlug}?${params.toString()}`
     }
 
     const copyLink = async (loc: Location) => {
@@ -191,65 +197,70 @@ export default function LocationManager({ clientSlug, locations, onChange }: Loc
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="md:col-span-4 flex items-end justify-end gap-3 flex-wrap pt-6">
-                                        <button
-                                            onClick={() => copyLink(loc)}
-                                            disabled={!loc.code}
-                                            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
-                                            title="Copy link tracking"
-                                        >
-                                            {copied === loc.id ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-                                            {copied === loc.id ? 'Copied' : 'Link'}
-                                        </button>
-                                        <button
-                                            onClick={() => downloadQR(loc)}
-                                            disabled={!loc.code}
-                                            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
-                                            title="Download QR"
-                                        >
-                                            <QrCode size={12} /> QR
-                                        </button>
-                                        <a
-                                            href={link}
-                                            target="_blank"
-                                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white/60 hover:text-white hover:bg-white/10 transition-all ${!loc.code ? 'opacity-20 pointer-events-none' : ''}`}
-                                        >
-                                            <ExternalLink size={12} /> Live
-                                        </a>
-                                        <button
-                                            onClick={() => removeLocation(index)}
-                                            className="flex items-center justify-center bg-red-500/5 border border-red-500/10 text-red-500/40 hover:text-red-500 hover:bg-red-500/10 rounded-xl w-11 h-11 transition-all"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                    <div className="md:col-span-3">
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">Links & Actions</label>
+                                        <div className="flex flex-col gap-2">
+                                            {/* Production Link */}
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => copyLink(loc)}
+                                                    disabled={!loc.code}
+                                                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-wider ${copied === loc.id
+                                                        ? 'bg-green-500/10 border-green-500/50 text-green-500'
+                                                        : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed'
+                                                        }`}
+                                                >
+                                                    {copied === loc.id ? <Check size={14} /> : <Copy size={14} />}
+                                                    {copied === loc.id ? 'Copied' : 'Prod Link'}
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        // Placeholder for QR
+                                                        setShowQR(showQR === loc.id ? null : loc.id)
+                                                    }}
+                                                    disabled={!loc.code}
+                                                    className="p-2.5 bg-white/5 border border-white/10 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30"
+                                                    title="QR Code"
+                                                >
+                                                    <QrCode size={14} />
+                                                </button>
+                                            </div>
+
+                                            {/* Local Test Link */}
+                                            {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+                                                <a
+                                                    href={generateLocalLink(loc)}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-white/10 text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${!loc.code ? 'bg-white/5 text-white/20 pointer-events-none' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border-orange-500/30'}`}
+                                                >
+                                                    <ExternalLink size={14} /> Local Test
+                                                </a>
+                                            )}
+
+                                            <button
+                                                onClick={() => removeLocation(index)}
+                                                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-wider mt-2 group/del"
+                                            >
+                                                <Trash2 size={14} className="group-hover/del:scale-110 transition-transform" /> Remove
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
                                 {/* Generated Link Preview */}
-                                {loc.code && (
-                                    <div className="mt-8 pt-6 border-t border-white/5">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <div className="w-1 h-1 bg-orange-500 rounded-full" />
-                                            <p className="text-[9px] font-black uppercase tracking-widest text-white/40">Generated tracking endpoint:</p>
-                                        </div>
-                                        <code className="text-[10px] font-mono bg-black/40 px-4 py-3 rounded-xl border border-white/5 block overflow-x-auto text-blue-400/80 whitespace-nowrap">
-                                            {link}
-                                        </code>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-1 h-1 bg-orange-500 rounded-full" />
+                                    <p className="text-[9px] font-black uppercase tracking-widest text-white/40">Generated tracking endpoint:</p>
+                                </div>
+                                <code className="text-[10px] font-mono bg-black/40 px-4 py-3 rounded-xl border border-white/5 block overflow-x-auto text-blue-400/80 whitespace-nowrap">
+                                    {link}
+                                </code>
                             </div>
                         )
                     })}
                 </div>
             )}
-
-            <div className="bg-blue-500/5 border border-blue-500/10 text-blue-400 p-6 rounded-3xl flex gap-4">
-                <div className="mt-1"><Link2 size={18} className="text-blue-500" /></div>
-                <div>
-                    <strong className="text-[10px] font-black uppercase tracking-widest block mb-1">Architecture Tip:</strong>
-                    <p className="text-xs leading-relaxed opacity-60">Mỗi điểm bán sẽ có link tracking duy nhất với tham số <code className="bg-black/40 px-1.5 py-0.5 rounded text-blue-300">pos_id</code>. Hệ thống sẽ tự động gán dữ liệu khách hàng vào điểm bán tương ứng khi họ tham gia tương tác.</p>
-                </div>
-            </div>
         </div>
     )
 }

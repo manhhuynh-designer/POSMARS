@@ -8,14 +8,46 @@ export interface Prize {
     color: string
 }
 
+export interface POSConfig {
+    pos_id: string       // POS Code
+    pos_name: string     // Human readable name
+    prizes: Prize[]      // Specific prize list for this POS
+}
+
 export interface LuckyDrawConfig {
     banner_url?: string // KV
+    bg_url?: string // Background image
+    bg_type?: 'image' | 'solid' | 'gradient' // Background type
+    bg_color?: string // Solid background color
+    bg_gradient_start?: string // Gradient start color
+    bg_gradient_end?: string // Gradient end color
     wheel_bg_url?: string // Custom wheel shape
     logo_url?: string
     spin_btn_url?: string
     pointer_url?: string
     rules_text?: string
     prizes: Prize[]
+
+    // Theme Options
+    theme_primary_color?: string // Primary brand color (default: #f97316 orange)
+    theme_accent_color?: string // Accent/secondary color (default: #ef4444 red)
+    theme_text_color?: string // Text color for result popup (default: #ffffff)
+
+    // Result Popup Customization
+    result_title_text?: string // e.g., "Chúc mừng bạn nhận được"
+    result_button_text?: string // e.g., "Nhận quà"
+    result_icon_url?: string // Custom emoji/icon for result popup
+
+    // POS Configuration
+    enable_pos_config?: boolean
+    pos_configs?: Record<string, POSConfig> // Map: pos_id -> config
+
+    // Replay Feature
+    allow_replay?: boolean
+    replay_button_text?: string
+
+    // Play Limits & Reset
+    max_plays?: number // Default 1
 }
 
 // AR Check-in Types
@@ -138,9 +170,17 @@ export interface FaceFilterConfig {
     occlusion_offset_z?: number
 }
 
+// Minimal interface to pass location data
+export interface LocationStub {
+    id: string
+    code: string
+    name: string
+}
+
 export interface TemplateConfigBuilderProps {
     template: string
     initialConfig: any
     onChange: (config: any) => void
     onUpload: (file: File, path: string) => Promise<string>
+    availableLocations?: LocationStub[] // Pass project locations
 }

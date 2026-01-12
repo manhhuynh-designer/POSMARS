@@ -27,17 +27,26 @@ export default function FileUploader({
     helperText
 }: FileUploaderProps) {
 
+    const [internalUploading, setInternalUploading] = useState(false)
+    const effectiveUploading = isUploading !== undefined ? isUploading : internalUploading
+
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
-        await onUpload(file)
+
+        try {
+            setInternalUploading(true)
+            await onUpload(file)
+        } finally {
+            setInternalUploading(false)
+        }
     }
 
     if (children) {
         return (
             <label className={`cursor-pointer ${className}`}>
                 {children}
-                <input type="file" className="hidden" accept={accept} onChange={handleChange} disabled={isUploading} />
+                <input type="file" className="hidden" accept={accept} onChange={handleChange} disabled={effectiveUploading} />
             </label>
         )
     }
@@ -46,10 +55,17 @@ export default function FileUploader({
         <div className={`relative ${className}`}>
             {/* If we have a custom preview renderer and a URL */}
             {currentUrl && renderPreview ? (
-                renderPreview(currentUrl)
+                <div className="relative group/uploader">
+                    {renderPreview(currentUrl)}
+                    {effectiveUploading && (
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center rounded-[inherit] z-20">
+                            <Loader2 className="animate-spin text-white" />
+                        </div>
+                    )}
+                </div>
             ) : (
                 <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-white/5 transition-colors">
-                    {isUploading ? (
+                    {effectiveUploading ? (
                         <Loader2 className="animate-spin text-white/50" />
                     ) : (
                         <>
@@ -58,7 +74,7 @@ export default function FileUploader({
                             {helperText && <span className="text-[9px] text-white/30 font-medium mt-1">{helperText}</span>}
                         </>
                     )}
-                    <input type="file" className="hidden" accept={accept} onChange={handleChange} disabled={isUploading} />
+                    <input type="file" className="hidden" accept={accept} onChange={handleChange} disabled={effectiveUploading} />
                 </label>
             )}
 

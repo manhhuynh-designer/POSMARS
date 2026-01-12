@@ -4,9 +4,33 @@ import { TemplateConfigBuilderProps, LuckyDrawConfig, Prize } from '../types'
 import PrizeList from './PrizeList'
 import LuckyDrawBranding from './LuckyDrawBranding'
 import LuckyDrawPreview from './LuckyDrawPreview'
+import POSManager from './POSManager'
+import { v4 as uuidv4 } from 'uuid'
 
-export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload }: TemplateConfigBuilderProps) {
-    const [activeTab, setActiveTab] = useState<'prizes' | 'branding' | 'rules'>('prizes') // Default tab
+const DEFAULT_RULES = `<b>ĐIỀU KHOẢN VÀ THỂ LỆ CHƯƠNG TRÌNH</b>
+<br/><br/>
+<b>1. Đối tượng tham gia:</b>
+Tất cả khách hàng mua sắm và tham gia trải nghiệm AR tại cửa hàng.
+<br/><br/>
+<b>2. Thời gian diễn ra:</b>
+Chương trình diễn ra từ nay cho đến khi có thông báo mới.
+<br/><br/>
+<b>3. Cách thức tham gia:</b>
+- Bước 1: Quét mã QR tại quầy.
+- Bước 2: Điền thông tin cá nhân chính xác.
+- Bước 3: Tham gia trò chơi Lucky Draw để nhận thưởng.
+<br/><br/>
+<b>4. Cơ cấu giải thưởng:</b>
+- Các giải thưởng sẽ được lựa chọn ngẫu nhiên theo tỷ lệ hệ thống.
+- Quà tặng/Voucher có giá trị sử dụng theo quy định ghi trên phiếu.
+<br/><br/>
+<b>5. Quy định chung:</b>
+- Quà tặng không có giá trị quy đổi thành tiền mặt.
+- BTC có quyền từ chối trao giải nếu phát hiện dấu hiệu gian lận.
+- Mọi quyết định cuối cùng thuộc về Ban Tổ Chức.`;
+
+export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload, availableLocations }: TemplateConfigBuilderProps) {
+    const [activeTab, setActiveTab] = useState<'prizes' | 'branding' | 'rules' | 'pos'>('prizes') // Default tab
 
     // Helper to update config
     const updateConfig = (key: string, value: any) => {
@@ -60,7 +84,8 @@ export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload }: 
                         {[
                             { id: 'prizes', icon: <Layers size={16} />, label: 'Prize Tiers', sub: 'Manage win rates' },
                             { id: 'branding', icon: <ImageIcon size={16} />, label: 'Aesthetics', sub: 'Visual identity' },
-                            { id: 'rules', icon: <Settings size={16} />, label: 'Game Logic', sub: 'Legal & behavior' }
+                            { id: 'rules', icon: <Settings size={16} />, label: 'Game Logic', sub: 'Legal & behavior' },
+                            { id: 'pos', icon: <Sparkles size={16} />, label: 'POS & Data', sub: 'Integration & Analytics' }
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -104,12 +129,29 @@ export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload }: 
                         />
                     )}
 
+                    {activeTab === 'pos' && (
+                        <POSManager
+                            config={config}
+                            onUpdateConfig={updateConfig}
+                            availableLocations={availableLocations}
+                            onUpload={onUpload}
+                        />
+                    )}
+
                     {activeTab === 'rules' && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
                             <section className="bg-[#0c0c0c] border border-white/5 rounded-[3rem] p-10 shadow-2xl space-y-8">
-                                <div className="flex items-center gap-3 border-b border-white/5 pb-8">
-                                    <div className="w-2 h-2 rounded-full bg-orange-500" />
-                                    <h4 className="text-[11px] font-black uppercase tracking-[0.4em] text-white/60">Game Rules & Terms</h4>
+                                <div className="flex items-center justify-between border-b border-white/5 pb-8 pt-8 border-t">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2 h-2 rounded-full bg-orange-500" />
+                                        <h4 className="text-[11px] font-black uppercase tracking-[0.4em] text-white/60">Game Rules & Terms</h4>
+                                    </div>
+                                    <button
+                                        onClick={() => updateConfig('rules_text', DEFAULT_RULES)}
+                                        className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl text-[10px] font-black text-orange-500 uppercase tracking-widest hover:bg-orange-500/20 transition-all"
+                                    >
+                                        Dùng mẫu tiếng Việt
+                                    </button>
                                 </div>
                                 <div className="space-y-6">
                                     <div className="relative">
@@ -139,10 +181,10 @@ export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload }: 
                         </div>
                     )}
                 </div>
-            </div>
+            </div >
 
             {/* Right Column: Phone Preview (1/4) */}
-            <div className="lg:col-span-1 w-full flex-shrink-0">
+            < div className="lg:col-span-1 w-full flex-shrink-0" >
                 <div className="lg:sticky lg:top-8 space-y-8">
                     <div className="bg-[#0c0c0c] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
                         <div className="space-y-1 text-center">
@@ -165,7 +207,7 @@ export default function LuckyDrawBuilder({ initialConfig, onChange, onUpload }: 
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     )
 }
