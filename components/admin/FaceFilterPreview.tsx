@@ -147,11 +147,7 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
             setLoading(false)
             setupVideoStyles(containerRef.current!)
 
-            // Fallback: Auto-detect face after timeout (events may not fire reliably)
-            setTimeout(() => {
-                console.log('⏰ Preview: Auto-enabling face detection after 3s')
-                setFaceDetected(true)
-            }, 3000)
+            // Initialized, ready for simulation
         })
 
         scene.addEventListener('arError', (event: any) => {
@@ -245,27 +241,55 @@ export default function FaceFilterPreview({ config, debugMode = true, onClose }:
             )}
 
             {/* Face Status */}
-            {!loading && (
-                <div className={`absolute bottom-3 left-3 px-3 py-1 rounded-full text-xs flex items-center gap-1 z-10 ${faceDetected ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'
-                    }`}>
-                    {faceDetected ? (
-                        <>
-                            <Sparkles size={12} />
-                            Đã nhận diện khuôn mặt
-                        </>
-                    ) : (
-                        <>
-                            <Camera size={12} />
-                            Đang tìm khuôn mặt...
-                        </>
-                    )}
+            <div className={`absolute bottom-3 left-3 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 z-10 transition-all ${faceDetected ? 'bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-orange-500/80 backdrop-blur-md text-white border border-white/20'
+                }`}>
+                {faceDetected ? (
+                    <>
+                        <Sparkles size={12} />
+                        Face Detected
+                    </>
+                ) : (
+                    <>
+                        <Camera size={12} className="animate-pulse" />
+                        Simulation Ready
+                    </>
+                )}
+            </div>
+
+            {!loading && !error && (
+                <div className="absolute top-14 left-3 z-10">
+                    <div className="bg-orange-500/20 backdrop-blur-md border border-orange-500/30 rounded-full px-3 py-1 text-[8px] font-black text-orange-400 uppercase tracking-widest">
+                        Simulation Mode
+                    </div>
                 </div>
             )}
 
             {/* No filter warning */}
             {!config.filter_url && !config.filter_3d_url && !loading && (
-                <div className="absolute bottom-3 right-3 px-3 py-1 bg-orange-500 text-white rounded-full text-xs z-10">
-                    ⚠️ Chưa có filter, đang dùng emoji demo
+                <div className="absolute bottom-3 right-3 px-3 py-1 bg-orange-500 text-white rounded-full text-[10px] uppercase font-black tracking-widest z-10 animate-pulse">
+                    ⚠️ No Filter configured
+                </div>
+            )}
+
+            {!loading && !error && !faceDetected && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <button
+                        onClick={() => setFaceDetected(true)}
+                        className="pointer-events-auto flex items-center gap-2 bg-orange-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.4)] animate-in fade-in zoom-in duration-700 delay-500"
+                    >
+                        <Sparkles size={14} /> Simulate Face Detection
+                    </button>
+                </div>
+            )}
+
+            {faceDetected && !error && (
+                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 pointer-events-auto z-40">
+                    <button
+                        onClick={() => setFaceDetected(false)}
+                        className="bg-black/60 backdrop-blur-md border border-white/10 text-white/40 hover:text-white px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest transition-all"
+                    >
+                        Reset Tracking
+                    </button>
                 </div>
             )}
         </div>

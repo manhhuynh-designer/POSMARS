@@ -66,10 +66,33 @@ export default function AdminDashboard() {
         setLoading(false)
     }
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`Xóa project "${name}"?`)) return
-        await supabase.from('projects').delete().eq('id', id)
-        loadProjects()
+    const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; projectId: string | null; projectName: string | null }>({
+        isOpen: false,
+        projectId: null,
+        projectName: null
+    })
+
+    const handleDeleteClick = (id: string, name: string) => {
+        setDeleteModal({ isOpen: true, projectId: id, projectName: name })
+    }
+
+    const confirmDelete = async () => {
+        if (!deleteModal.projectId) return
+
+        try {
+            const { error } = await supabase.from('projects').delete().eq('id', deleteModal.projectId)
+            if (error) {
+                console.error('Error deleting project:', error)
+                alert(`Không thể xóa project: ${error.message}`)
+                return
+            }
+            // Success
+            loadProjects()
+            setDeleteModal({ isOpen: false, projectId: null, projectName: null })
+        } catch (err: any) {
+            console.error('Unexpected error:', err)
+            alert(`Đã có lỗi xảy ra: ${err.message || 'Unknown error'}`)
+        }
     }
 
     const getTypeLabel = (type: string) => {
@@ -452,7 +475,7 @@ export default function AdminDashboard() {
                                                     <Edit2 size={16} />
                                                 </Link>
                                                 <button
-                                                    onClick={() => handleDelete(p.id, p.name || p.client_slug)}
+                                                    onClick={() => handleDeleteClick(p.id, p.name || p.client_slug)}
                                                     className="p-2.5 bg-white/5 border border-white/5 hover:border-red-500/50 text-white/60 hover:text-red-500 rounded-xl transition-all hover:scale-110"
                                                     title="Delete"
                                                 >
@@ -543,6 +566,40 @@ export default function AdminDashboard() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {deleteModal.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeleteModal({ isOpen: false, projectId: null, projectName: null })} />
+                    <div className="relative bg-[#0c0c0c] border border-white/10 p-6 rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4 mx-auto text-red-500">
+                            <Trash2 size={24} />
+                        </div>
+
+                        <h3 className="text-lg font-black text-white text-center mb-2 uppercase tracking-tight">Xác nhận xóa</h3>
+                        <p className="text-white/60 text-center text-sm mb-6">
+                            Bạn có chắc chắn muốn xóa project <br />
+                            <span className="text-white font-bold">"{deleteModal.projectName}"</span>?
+                            <br />
+                            <span className="text-red-400/80 text-xs mt-2 block italic">Hành động này không thể hoàn tác.</span>
+                        </p>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteModal({ isOpen: false, projectId: null, projectName: null })}
+                                className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-medium hover:bg-white/10 transition-colors text-sm uppercase tracking-wider"
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium shadow-[0_0_20px_rgba(239,68,68,0.2)] transition-all hover:scale-105 active:scale-95 text-sm uppercase tracking-wider"
+                            >
+                                Xóa ngay
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

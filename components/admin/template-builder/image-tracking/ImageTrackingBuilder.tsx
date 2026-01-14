@@ -826,10 +826,30 @@ export default function ImageTrackingBuilder({ initialConfig, onChange, onUpload
                                             />
                                         ) : (
                                             <StudioPreview
-                                                config={config}
+                                                assets={(() => {
+                                                    const targetIndex = selectedTargetIndex ?? -1
+                                                    if (targetIndex === -1) {
+                                                        return config.default_assets || config.assets || []
+                                                    }
+                                                    const target = config.targets?.[targetIndex]
+                                                    if (!target) return []
+                                                    if (target.extends !== undefined) {
+                                                        if (target.extends === -1) return config.default_assets || []
+                                                        const parentTarget = config.targets?.find(t => t.targetIndex === target.extends)
+                                                        return parentTarget?.assets || config.default_assets || []
+                                                    }
+                                                    return target.assets || []
+                                                })()}
+                                                lightingConfig={{
+                                                    ambient_intensity: config.ambient_intensity,
+                                                    directional_intensity: config.directional_intensity,
+                                                    environment_url: config.environment_url,
+                                                    exposure: config.exposure,
+                                                    tone_mapping: config.tone_mapping
+                                                }}
+                                                thumbnail={selectedTargetIndex !== undefined && selectedTargetIndex >= 0 ? config.targets?.[selectedTargetIndex]?.thumbnail : undefined}
                                                 debugMode={debugMode}
                                                 onClose={() => setShowPreview(false)}
-                                                selectedTargetIndex={selectedTargetIndex}
                                                 playbackState={playbackState}
                                                 onPlaybackChange={setPlaybackState}
                                             />

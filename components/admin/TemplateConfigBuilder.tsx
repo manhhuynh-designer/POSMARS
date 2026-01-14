@@ -5,6 +5,10 @@ import LuckyDrawBuilder from './template-builder/lucky-draw/LuckyDrawBuilder'
 import ImageTrackingBuilder from './template-builder/image-tracking/ImageTrackingBuilder'
 import ARCheckinBuilder from './template-builder/ar-checkin/ARCheckinBuilder'
 import FaceFilterBuilder from './template-builder/face-filter/FaceFilterBuilder'
+import ArchitecturalTrackingBuilder from './template-builder/architectural-tracking/ArchitecturalTrackingBuilder'
+import WatchRingBuilder from './template-builder/watch-ring/WatchRingBuilder'
+import WorldARBuilder from './template-builder/world-ar/WorldARBuilder'
+import HandGestureBuilder from './template-builder/hand-gesture/HandGestureBuilder'
 
 interface TemplateConfigBuilderProps {
     template: string
@@ -52,6 +56,46 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
         case 'face_filter':
             return (
                 <FaceFilterBuilder
+                    template={template}
+                    initialConfig={initialConfig}
+                    onChange={onChange}
+                    onUpload={onUpload}
+                />
+            )
+
+        case 'architectural_tracking':
+            return (
+                <ArchitecturalTrackingBuilder
+                    template={template}
+                    initialConfig={initialConfig}
+                    onChange={onChange}
+                    onUpload={onUpload}
+                />
+            )
+
+        case 'watch_ring_tryon':
+            return (
+                <WatchRingBuilder
+                    template={template}
+                    initialConfig={initialConfig}
+                    onChange={onChange}
+                    onUpload={onUpload}
+                />
+            )
+
+        case 'world_ar':
+            return (
+                <WorldARBuilder
+                    template={template}
+                    initialConfig={initialConfig}
+                    onChange={onChange}
+                    onUpload={onUpload}
+                />
+            )
+
+        case 'hand_gesture':
+            return (
+                <HandGestureBuilder
                     template={template}
                     initialConfig={initialConfig}
                     onChange={onChange}

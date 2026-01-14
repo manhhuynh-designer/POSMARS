@@ -1,57 +1,65 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+// Next.js 16+ uses 'proxy' instead of 'middleware'
+export async function proxy(request: NextRequest) {
+    let response = NextResponse.next({
+        request: {
+            headers: request.headers,
+        },
+    })
+
+    // 1. Initialize Supabase Client with SSR helper
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() {
+                    return request.cookies.getAll()
+                },
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        request.cookies.set({ name, value, ...options })
+                    })
+                    response = NextResponse.next({
+                        request: {
+                            headers: request.headers,
+                        },
+                    })
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        response.cookies.set({ name, value, ...options })
+                    })
+                },
+            },
+        }
+    )
+
+    // 2. Refresh Session
+    // This updates the session cookie if it's close to expiring
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // 3. Protect Admin Routes
+    if (request.nextUrl.pathname.startsWith('/admin') && !user) {
+        const redirectUrl = request.nextUrl.clone()
+        redirectUrl.pathname = '/login'
+        redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)
+        return NextResponse.redirect(redirectUrl)
+    }
+
+    // 4. Redirect Login if already authenticated
+    if (request.nextUrl.pathname === '/login' && user) {
+        const redirectUrl = request.nextUrl.clone()
+        redirectUrl.pathname = '/admin'
+        return NextResponse.redirect(redirectUrl)
+    }
+
+    return response
+}
 
 export const config = {
     matcher: [
-        "/((?!api/|_next/|_static/|[\\w-]+\\.\\w+).*)",
+        // Apply to all routes to ensure session is refreshed
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
-};
-
-export default function proxy(req: NextRequest) {
-    try {
-        const url = req.nextUrl;
-        const hostname = req.headers.get("host") || "";
-
-        // For now, let's allow ALL requests to pass through
-        // This is a test to isolate if the proxy itself is causing the 404
-
-        // Skip rewrite for Admin, Login, Client, and root routes
-        if (
-            url.pathname === '/' ||
-            url.pathname.startsWith('/admin') ||
-            url.pathname.startsWith('/login') ||
-            url.pathname.startsWith('/client')
-        ) {
-            return NextResponse.next();
-        }
-
-        const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'posmars.vn';
-
-        // Check if main domain, localhost, or Vercel preview
-        if (
-            hostname === 'localhost:3000' ||
-            hostname === ROOT_DOMAIN ||
-            hostname === `www.${ROOT_DOMAIN}` ||
-            hostname.endsWith('.vercel.app') ||
-            hostname.includes('.loca.lt')
-        ) {
-            return NextResponse.next();
-        }
-
-        // Extract subdomain for custom domains
-        const currentSubdomain = hostname.replace(`.${ROOT_DOMAIN}`, '');
-
-        if (!currentSubdomain || currentSubdomain === hostname) {
-            // No valid subdomain extracted, pass through
-            return NextResponse.next();
-        }
-
-        // Rewrite path to /client/[slug]
-        url.pathname = `/client/${currentSubdomain}${url.pathname}`;
-        return NextResponse.rewrite(url);
-
-    } catch (error) {
-        console.error('Proxy error:', error);
-        return NextResponse.next();
-    }
 }

@@ -159,6 +159,12 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
     }, [markerUrl, assetStructureKey, facingMode])
 
     const initAR = () => {
+        if (!markerUrl) {
+            console.warn('⚠️ Image Tracking: No markerUrl provided. Aborting init.')
+            setError('Vui lòng upload target marker (.mind) để bắt đầu mô phỏng')
+            setLoading(false)
+            return
+        }
         if (!containerRef.current) return
 
         // Register custom component for Model Opacity if not exists
@@ -920,20 +926,26 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
             )}
 
             {/* Status */}
-            {!loading && (
-                <div className={`absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-2 z-10 transition-colors ${targetFound ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
-                    }`}>
-                    {targetFound ? (
-                        <>
-                            <Sparkles size={14} />
-                            Đã nhận diện marker
-                        </>
-                    ) : (
-                        <>
-                            <Camera size={14} className="animate-pulse" />
-                            Đang tìm marker...
-                        </>
-                    )}
+            <div className={`absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 z-10 transition-all ${targetFound ? 'bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-orange-500/80 backdrop-blur-md text-white border border-white/20'
+                }`}>
+                {targetFound ? (
+                    <>
+                        <Sparkles size={14} />
+                        Marker Detected
+                    </>
+                ) : (
+                    <>
+                        <Camera size={14} className="animate-pulse" />
+                        Simulation Ready
+                    </>
+                )}
+            </div>
+
+            {!loading && !error && (
+                <div className="absolute top-14 left-4 z-10">
+                    <div className="bg-orange-500/20 backdrop-blur-md border border-orange-500/30 rounded-full px-3 py-1 text-[8px] font-black text-orange-400 uppercase tracking-widest">
+                        Simulation Mode
+                    </div>
                 </div>
             )}
 
@@ -959,6 +971,28 @@ export default function ImageTrackingPreview({ markerUrl, config, onClose }: Ima
                         <Box size={48} className="mx-auto opacity-20" />
                         <p className="text-sm">Vui lòng upload file marker (.mind) để preview</p>
                     </div>
+                </div>
+            )}
+
+            {!loading && !error && !targetFound && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <button
+                        onClick={() => setTargetFound(true)}
+                        className="pointer-events-auto flex items-center gap-2 bg-orange-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.4)] animate-in fade-in zoom-in duration-700 delay-500"
+                    >
+                        <Sparkles size={14} /> Simulate Detection
+                    </button>
+                </div>
+            )}
+
+            {targetFound && !error && (
+                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 pointer-events-auto z-40">
+                    <button
+                        onClick={() => setTargetFound(false)}
+                        className="bg-black/60 backdrop-blur-md border border-white/10 text-white/40 hover:text-white px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest transition-all"
+                    >
+                        Reset Tracking
+                    </button>
                 </div>
             )}
         </div>

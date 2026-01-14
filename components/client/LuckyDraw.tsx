@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useMemo } from 'react'
+import DOMPurify from 'isomorphic-dompurify'
 
 interface POSConfig {
     pos_id: string
@@ -297,7 +298,7 @@ export default function LuckyDraw({ config, onComplete, isPreview = false, posId
                     <div
                         className="text-xs leading-relaxed whitespace-pre-line"
                         style={{ color: config.theme_text_color ? `${config.theme_text_color}CC` : 'rgba(255,255,255,0.8)' }}
-                        dangerouslySetInnerHTML={{ __html: config.rules_text }}
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(config.rules_text) }}
                     />
                 </div>
             )}

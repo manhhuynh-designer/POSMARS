@@ -18,6 +18,25 @@ export async function GET(req: NextRequest) {
         const bucket = adminStorage.bucket();
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        // [SECURITY] Critical: Check Auth
+        // Verify the user making the request is authenticated
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Missing Authorization header' }, { status: 401 });
+        }
+
+        // Use a lightweight client to verify the token (not the service role key)
+        const supabaseAuth = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: authHeader } } }
+        );
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 401 });
+        }
+
         // 1. Get all files from Firebase Storage
         const [files] = await bucket.getFiles();
 
@@ -136,6 +155,21 @@ export async function DELETE(req: NextRequest) {
         const adminStorage = getAdminStorage();
         if (!adminStorage) {
             return NextResponse.json({ error: 'Storage configuration error' }, { status: 500 });
+        }
+
+        // [SECURITY] Critical: Check Auth
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Missing Authorization header' }, { status: 401 });
+        }
+        const supabaseAuth = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: authHeader } } }
+        );
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const bucket = adminStorage.bucket();

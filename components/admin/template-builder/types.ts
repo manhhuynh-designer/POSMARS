@@ -89,7 +89,7 @@ export interface ARAsset {
     keyframes?: VideoKeyframe[]
     animation_duration?: number
     loop_animation?: boolean
-    occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane'
+    occlusion_shape?: 'model' | 'cube' | 'sphere' | 'plane' | 'box' | 'cylinder'
 
     // Image settings
     image_width?: number  // Aspect ratio width
@@ -175,6 +175,128 @@ export interface LocationStub {
     id: string
     code: string
     name: string
+}
+
+// Architectural Tracking Types (WebAR.rocks Object)
+export interface OverlayModel {
+    id: string
+    name: string
+    url: string  // GLB/GLTF
+    scale: number
+    position: [number, number, number]
+    rotation: [number, number, number]
+}
+
+export interface ArchitecturalTrackingConfig {
+    // Object Model (Neural Network trained model)
+    object_model_url?: string  // .zip file chứa NN model
+
+    // Overlay Assets
+    overlay_models?: OverlayModel[]
+
+    // UI
+    logo_url?: string
+    instructions?: string
+    enable_capture?: boolean
+    enable_record?: boolean
+    capture_btn_text?: string
+    capture_btn_color?: string
+
+    // Advanced
+    max_video_duration?: number
+
+    // Lighting config
+    ambient_intensity?: number
+    directional_intensity?: number
+    environment_url?: string
+    exposure?: number
+}
+
+// Watch & Ring Try-on Types (WebAR.rocks Hand)
+export interface AccessoryModel {
+    id: string
+    name: string
+    type: 'watch' | 'ring' | 'bracelet'
+    url: string  // GLB/GLTF
+    scale: number
+    position: [number, number, number]
+    rotation: [number, number, number]
+}
+
+export interface WatchRingConfig {
+    accessory_models?: AccessoryModel[]
+    hand_preference?: 'left' | 'right' | 'both'
+    logo_url?: string
+    instructions?: string
+    enable_capture?: boolean
+    enable_record?: boolean
+    capture_btn_text?: string
+    capture_btn_color?: string
+    max_video_duration?: number
+
+    // Lighting config
+    ambient_intensity?: number
+    directional_intensity?: number
+    environment_url?: string
+    exposure?: number
+}
+
+// World AR Types (MediaPipe/AR.js)
+export interface PlacementModel {
+    id: string
+    name: string
+    url: string  // GLB/GLTF
+    scale: number
+    position: [number, number, number]
+    rotation: [number, number, number]
+    allow_user_scale?: boolean
+    min_scale?: number
+    max_scale?: number
+
+    // Type compatibility for ARAsset
+    type?: '3d'
+}
+
+export interface WorldARConfig {
+    placement_models?: PlacementModel[]
+    placement_mode?: 'tap' | 'auto'
+    logo_url?: string
+    instructions?: string
+    enable_capture?: boolean
+    enable_record?: boolean
+    capture_btn_text?: string
+    capture_btn_color?: string
+    max_video_duration?: number
+
+    // Lighting config
+    ambient_intensity?: number
+    directional_intensity?: number
+    environment_url?: string
+    exposure?: number
+}
+
+// Hand Gesture AR Types (MediaPipe)
+export interface GestureModel {
+    id: string
+    name: string
+    gesture: 'open' | 'closed' | 'point' | 'peace' | 'thumbs_up'
+    url: string  // GLB/GLTF
+    scale: number
+    position: [number, number, number]
+    rotation: [number, number, number]
+    animation?: string
+}
+
+export interface HandGestureConfig {
+    gesture_models?: GestureModel[]
+    gesture_sensitivity?: number
+    logo_url?: string
+    instructions?: string
+    enable_capture?: boolean
+    enable_record?: boolean
+    capture_btn_text?: string
+    capture_btn_color?: string
+    max_video_duration?: number
 }
 
 export interface TemplateConfigBuilderProps {

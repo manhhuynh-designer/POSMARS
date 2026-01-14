@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, X, Sparkles, Video, Square, Download, Play } from 'lucide-react'
+import DOMPurify from 'isomorphic-dompurify'
 import {
     FaceARConfig,
     loadFaceARScripts,
@@ -336,7 +337,7 @@ export default function FaceFilter({ config, onCapture, onComplete }: FaceFilter
             {config.rules_text && !loading && (
                 <div className="absolute bottom-4 left-4 right-4 z-10">
                     <div className="bg-black/60 backdrop-blur rounded-lg p-3 text-white text-xs max-h-20 overflow-auto">
-                        <div dangerouslySetInnerHTML={{ __html: config.rules_text.replace(/\n/g, '<br>') }} />
+                        <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(config.rules_text.replace(/\n/g, '<br>')) }} />
                     </div>
                 </div>
             )}

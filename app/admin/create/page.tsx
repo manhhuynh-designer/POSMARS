@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Check, Sparkles, Target, Gamepad2, FileText, CheckCircle2, ToggleLeft, ToggleRight, Users, UserX } from 'lucide-react'
 
 type InteractionType = 'ar' | 'game'
-type ARTemplate = 'image_tracking' | 'ar_checkin' | 'face_filter'
+type ARTemplate = 'image_tracking' | 'ar_checkin' | 'face_filter' | 'architectural_tracking' | 'watch_ring_tryon' | 'world_ar' | 'hand_gesture'
 type GameTemplate = 'lucky_draw' | 'scratch_card' | 'quiz'
 type Template = ARTemplate | GameTemplate
 
@@ -14,6 +14,10 @@ const TEMPLATES = {
         { id: 'image_tracking', name: 'Image Tracking', desc: 'Quét poster → Overlay 3D', priority: 'P1', icon: '📷' },
         { id: 'ar_checkin', name: 'AR Check-in', desc: 'Chụp ảnh với frame branded', priority: 'P1', icon: '🤳' },
         { id: 'face_filter', name: 'Face Filter', desc: 'Filter khuôn mặt', priority: 'P1', icon: '🎭' },
+        { id: 'architectural_tracking', name: 'Architectural Tracking', desc: 'Tracking công trình kiến trúc', priority: 'P1', icon: '🏛️' },
+        { id: 'watch_ring_tryon', name: 'Watch & Ring Try-on', desc: 'Thử đồng hồ, nhẫn ảo', priority: 'P1', icon: '⌚' },
+        { id: 'world_ar', name: 'World AR', desc: 'Đặt vật thể 3D không marker', priority: 'P1', icon: '🌍', },
+        { id: 'hand_gesture', name: 'Hand Gesture AR', desc: 'Điều khiển bằng cử chỉ tay', priority: 'P1', icon: '👋' },
     ],
     game: [
         { id: 'lucky_draw', name: 'Lucky Draw', desc: 'Vòng quay may mắn', priority: 'P1', icon: '🎡' },
@@ -42,6 +46,10 @@ const DEFAULT_TEMPLATE_CONFIGS: Record<Template, object> = {
     image_tracking: { model_scale: 1, model_position: [0, 0, 0], show_scan_hint: true },
     ar_checkin: { frame_url: '', watermark_text: '', share_hashtag: '' },
     face_filter: { filter_scale: 0.5 },
+    architectural_tracking: { object_model_url: '', overlay_models: [], enable_capture: true },
+    watch_ring_tryon: { accessory_models: [], hand_preference: 'both', enable_capture: true },
+    world_ar: { placement_models: [], placement_mode: 'tap' },
+    hand_gesture: { gesture_models: [], gesture_sensitivity: 0.7 },
     lucky_draw: {
         wheel_segments: 8,
         prizes: [
@@ -316,13 +324,13 @@ export default function CreateProjectPage() {
                         <div
                             onClick={() => setFormData({ ...formData, enable_lead_form: !formData.enable_lead_form })}
                             className={`p-6 rounded-2xl cursor-pointer transition-all duration-300 flex items-center gap-5 ${formData.enable_lead_form
-                                    ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
-                                    : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+                                ? 'bg-green-500/10 border-2 border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
+                                : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
                                 }`}
                         >
                             <div className={`p-3 rounded-xl transition-all ${formData.enable_lead_form
-                                    ? 'bg-green-500/20 text-green-400'
-                                    : 'bg-white/10 text-white/30'
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-white/10 text-white/30'
                                 }`}>
                                 {formData.enable_lead_form ? <Users size={24} /> : <UserX size={24} />}
                             </div>
@@ -435,8 +443,8 @@ export default function CreateProjectPage() {
                             <div className="flex justify-between items-center py-3">
                                 <span className="text-white/40 text-sm">Thu thập Lead</span>
                                 <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest ${formData.enable_lead_form
-                                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                                        : 'bg-white/5 text-white/40 border border-white/10'
+                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                    : 'bg-white/5 text-white/40 border border-white/10'
                                     }`}>
                                     {formData.enable_lead_form ? 'Có' : 'Không'}
                                 </span>

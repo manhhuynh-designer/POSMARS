@@ -34,6 +34,21 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Storage configuration error' }, { status: 500 });
         }
 
+        // [SECURITY] Critical: Check Auth
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Missing Authorization header' }, { status: 401 });
+        }
+        const supabaseAuth = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: authHeader } } }
+        );
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const bucket = adminStorage.bucket();
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -175,6 +190,21 @@ export async function DELETE(req: NextRequest) {
 
         if (!projectId || (!assetId && !assetPath)) {
             return NextResponse.json({ error: 'Missing projectId or asset identifier' }, { status: 400 });
+        }
+
+        // [SECURITY] Critical: Check Auth
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Missing Authorization header' }, { status: 401 });
+        }
+        const supabaseAuth = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: authHeader } } }
+        );
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
