@@ -10,16 +10,13 @@ export default function ProjectForm({ project }: { project?: any }) {
         client_slug: project?.client_slug || '',
         is_active: project?.is_active ?? true,
         asset_url: project?.asset_url || '',
+        marker_url: project?.marker_url || '', // Include marker_url in state
         ga_id: project?.ga_id || '',
+        template: project?.template || 'image_tracking', // Default template
         config: JSON.stringify(project?.config || {}, null, 2)
     })
 
-    // Extract marker_url from config for display
-    const markerUrl = (() => {
-        try {
-            return JSON.parse(formData.config || '{}').marker_url || ''
-        } catch { return '' }
-    })()
+
 
     // Validate slug format
     const validateSlug = (slug: string): boolean => {
@@ -71,9 +68,7 @@ export default function ProjectForm({ project }: { project?: any }) {
             if (field === 'asset_url') {
                 setFormData({ ...formData, asset_url: publicUrl })
             } else {
-                const currentConfig = JSON.parse(formData.config || '{}')
-                currentConfig.marker_url = publicUrl
-                setFormData({ ...formData, config: JSON.stringify(currentConfig, null, 2) })
+                setFormData({ ...formData, marker_url: publicUrl })
             }
 
         } catch (error) {
@@ -150,6 +145,25 @@ export default function ProjectForm({ project }: { project?: any }) {
                     Active
                 </label>
             </div>
+
+            <div>
+                <label className="block text-sm font-medium mb-1">Template Type</label>
+                <select
+                    className="w-full border p-2 rounded bg-white"
+                    value={formData.template}
+                    onChange={e => setFormData({ ...formData, template: e.target.value })}
+                >
+                    <option value="image_tracking">Image Tracking (Poster)</option>
+                    <option value="product_configurator">3D Product Configurator (New)</option>
+                    <option value="lucky_draw">Lucky Draw (Game)</option>
+                    <option value="ar_checkin">AR Check-in (Photo)</option>
+                    <option value="face_filter">Face Filter</option>
+                    <option value="architectural_tracking">Architectural Tracking</option>
+                    <option value="watch_ring_tryon">Watch & Ring Try-on</option>
+                    <option value="world_ar">World AR (Place Object)</option>
+                    <option value="hand_gesture">Hand Gesture Control</option>
+                </select>
+            </div>
             <div>
                 <label className="block text-sm font-medium mb-1">3D Model (.glb)</label>
                 <input
@@ -179,7 +193,7 @@ export default function ProjectForm({ project }: { project?: any }) {
               file:bg-blue-50 file:text-blue-700
               hover:file:bg-blue-100"
                 />
-                {markerUrl && <a href={markerUrl} target="_blank" className="text-xs text-blue-600 mt-1 block truncate">Marker: {markerUrl}</a>}
+                {formData.marker_url && <a href={formData.marker_url} target="_blank" className="text-xs text-blue-600 mt-1 block truncate">Marker: {formData.marker_url}</a>}
                 <p className="text-xs text-slate-400 mt-1">Files created with mind-ar-js-compiler</p>
             </div>
             <div>

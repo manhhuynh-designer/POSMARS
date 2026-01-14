@@ -10,6 +10,7 @@ import ImageTracking from '@/components/client/ImageTracking'
 import FaceFilter from '@/components/client/FaceFilter'
 import Placeholder from '@/components/client/Placeholder'
 import CustomARRenderer from '@/components/client/CustomARRenderer'
+import ProductConfigurator from '@/components/client/ProductConfigurator'
 
 type Step = 'lead_form' | 'interaction' | 'result'
 
@@ -332,6 +333,15 @@ export default function ClientPage() {
 
                             {template === 'face_filter' && (
                                 <FaceFilter
+                                    config={template_config || {}}
+                                    onCapture={(imageData) => handleInteractionComplete({ imageUrl: imageData })}
+                                    onComplete={() => handleInteractionComplete()}
+                                />
+                            )}
+
+
+                            {template === 'product_configurator' && (
+                                <ProductConfigurator
                                     config={template_config || {}}
                                     onCapture={(imageData) => handleInteractionComplete({ imageUrl: imageData })}
                                     onComplete={() => handleInteractionComplete()}

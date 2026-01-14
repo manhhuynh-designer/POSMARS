@@ -299,6 +299,50 @@ export interface HandGestureConfig {
     max_video_duration?: number
 }
 
+// Product Configurator Types (New)
+export interface Hotspot {
+    id: string
+    position: [number, number, number]
+    normal?: [number, number, number] // For surface orientation
+    label?: string
+    content?: string // HTML or Text content
+}
+
+export interface MaterialVariant {
+    id: string
+    name: string
+    color: string        // Hex color
+    thumbnail?: string   // Optional texture thumbnail
+    metalness?: number
+    roughness?: number
+}
+
+export interface ConfigurablePart {
+    id: string
+    mesh_name: string    // The actual name of the mesh in the GLB
+    name: string         // Display name (e.g. "Seat Leather")
+    variants: MaterialVariant[]
+}
+
+export interface ProductConfiguratorConfig {
+    // Core Assets
+    model_url?: string       // The main GLB product
+    poster_url?: string      // Loading poster
+
+    // Configuration
+    parts?: ConfigurablePart[]
+    hotspots?: Hotspot[]
+
+    // UI & Branding
+    logo_url?: string
+    instructions?: string
+
+    // Environment
+    environment_url?: string
+    exposure?: number
+    shadow_intensity?: number
+}
+
 export interface TemplateConfigBuilderProps {
     template: string
     initialConfig: any

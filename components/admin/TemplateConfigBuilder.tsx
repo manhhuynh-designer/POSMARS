@@ -9,6 +9,7 @@ import ArchitecturalTrackingBuilder from './template-builder/architectural-track
 import WatchRingBuilder from './template-builder/watch-ring/WatchRingBuilder'
 import WorldARBuilder from './template-builder/world-ar/WorldARBuilder'
 import HandGestureBuilder from './template-builder/hand-gesture/HandGestureBuilder'
+import ProductConfiguratorBuilder from './template-builder/product-configurator/ProductConfiguratorBuilder'
 
 interface TemplateConfigBuilderProps {
     template: string
@@ -98,6 +99,15 @@ export default function TemplateConfigBuilder({ template, initialConfig, onChang
                 <HandGestureBuilder
                     template={template}
                     initialConfig={initialConfig}
+                    onChange={onChange}
+                    onUpload={onUpload}
+                />
+            )
+
+        case 'product_configurator':
+            return (
+                <ProductConfiguratorBuilder
+                    config={initialConfig || {}}
                     onChange={onChange}
                     onUpload={onUpload}
                 />
